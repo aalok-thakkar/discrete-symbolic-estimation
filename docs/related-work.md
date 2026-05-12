@@ -91,9 +91,13 @@ target.
 * **Maurer, Pontil (2009).** *Empirical Bernstein bounds and sample
   variance penalization.* COLT 2009. The MP-EB bound implemented as
   `method="empirical-bernstein"`.
-* **McBook, Owen (2013).** *Monte Carlo theory, methods and
-  examples.* Reference text on stratified sampling and variance
-  reduction.
+* **Owen (2013).** *Monte Carlo theory, methods, and examples*
+  (informally "McBook"). Reference text on stratified sampling and
+  variance reduction.
+* **Acklam (2003).** *An algorithm for computing the inverse normal
+  cumulative distribution function*. Web-published rational
+  approximation used internally by :func:`wilson_halfwidth_for_leaf`
+  to avoid a ``scipy.special`` dependency.
 
 ### 5.1 Anytime-valid concentration (the adaptive case)
 

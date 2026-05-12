@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -68,6 +68,7 @@ def estimate(
     budget: int | None = 10_000,
     budget_seconds: float | None = None,
     min_gain_per_cost: float = 0.0,
+    method: Literal["wilson", "anytime", "bernstein", "empirical-bernstein"] = "wilson",
     bootstrap: int = 200,
     batch_size: int = 50,
     seed: int = 0,
@@ -111,6 +112,13 @@ def estimate(
         action exists (diminishing-returns floor). Default ``0``
         preserves the brief's strict semantics; e.g. ``1e-9`` makes
         unbounded runs terminate as soon as further work is wasted.
+    method:
+        Certified half-width construction (see
+        :func:`~dise.estimator.compute_estimator_state`). ``"wilson"``
+        (default) is tightest at fixed sample counts; ``"anytime"``
+        is the time-uniform variant sound under ASIP's adaptive
+        stopping rule (recommended for ATVA-style certificates,
+        see :doc:`docs/algorithm` §13).
     bootstrap:
         Number of initial samples drawn from ``D`` before adaptive
         action selection begins.
@@ -150,6 +158,7 @@ def estimate(
         budget_samples=budget,
         budget_seconds=budget_seconds,
         min_gain_per_cost=min_gain_per_cost,
+        method=method,
         bootstrap_samples=bootstrap,
         batch_size=batch_size,
         max_refinement_depth=max_refinement_depth,
@@ -193,6 +202,7 @@ def failure_probability(
     budget: int | None = None,
     budget_seconds: float | None = None,
     min_gain_per_cost: float = 0.0,
+    method: Literal["wilson", "anytime", "bernstein", "empirical-bernstein"] = "wilson",
     bootstrap: int = 200,
     batch_size: int = 50,
     seed: int = 0,
@@ -217,10 +227,17 @@ def failure_probability(
     semantics. Exceptions outside ``catch`` are *not* caught — they
     propagate, indicating a real bug in the harness.
 
-    Note that the default ``budget=None`` is *unlimited*: the algorithm
-    runs until ``epsilon_reached`` (configurable via ``epsilon``) or
-    ``no_actions_available`` fires. Pass an explicit ``budget`` for
-    bounded-time runs.
+    .. warning::
+
+       The default ``budget=None`` is *unlimited*. For
+       unconditionally-bounded runs, configure at least one of
+       ``budget`` (sample cap), ``budget_seconds`` (wall-clock cap),
+       or ``min_gain_per_cost > 0`` (diminishing-returns floor). On
+       a pathologically hard target with all three permissive the
+       algorithm may not terminate.
+
+    See :func:`estimate` for the full parameter reference; this
+    wrapper accepts the same keyword arguments.
 
     Examples
     --------
@@ -234,8 +251,8 @@ def failure_probability(
     ...     program=safe_mul,
     ...     distribution={"a": Uniform(1, 31), "b": Uniform(1, 31)},
     ...     epsilon=0.05,
+    ...     budget=2000,                # bound the run for the example
     ... )                                                # doctest: +SKIP
-    >>> print(result)                                    # doctest: +SKIP
     """
 
     def wrapped(**kw: int) -> int:
@@ -254,6 +271,7 @@ def failure_probability(
         budget=budget,
         budget_seconds=budget_seconds,
         min_gain_per_cost=min_gain_per_cost,
+        method=method,
         bootstrap=bootstrap,
         batch_size=batch_size,
         seed=seed,

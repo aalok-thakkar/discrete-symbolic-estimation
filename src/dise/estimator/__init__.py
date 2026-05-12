@@ -178,10 +178,18 @@ def wilson_halfwidth_anytime(n: int, h: int, delta: float) -> float:
 
 
 def _phi_inv_one_sided(p: float) -> float:
-    """Inverse standard-normal CDF, Beasley-Springer-Moro approximation.
+    """Inverse standard-normal CDF via Acklam's rational approximation.
 
-    Good to ~7 decimal places on (0, 1). Used so we don't have to import
-    scipy.special.
+    Returns :math:`\\Phi^{-1}(p)` for :math:`p \\in (0, 1)`. Accurate to
+    roughly seven significant digits across the full open interval —
+    sufficient for :func:`wilson_halfwidth_for_leaf`, which needs
+    :math:`z_{1 - \\delta/2}` at modest :math:`\\delta`. Avoids a
+    ``scipy.special`` dependency on the hot path.
+
+    References
+    ----------
+    P. Acklam, "An algorithm for computing the inverse normal
+    cumulative distribution function" (2003), web-published note.
     """
     if p <= 0.0 or p >= 1.0:
         raise ValueError("p must be in (0, 1)")

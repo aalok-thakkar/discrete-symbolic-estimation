@@ -17,7 +17,6 @@ close a region based on an ``unsat`` derived from ``"unknown"``.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from typing import Any, Literal
 
 # An opaque SMT expression. Backends use their own concrete types; the rest
@@ -33,17 +32,6 @@ ARITH_OPS = frozenset({"+", "-", "*", "div", "mod", "neg"})
 COMPARE_OPS = frozenset({"==", "!=", "<", "<=", ">", ">="})
 LOGIC_OPS = frozenset({"and", "or", "not"})
 SUPPORTED_OPS = ARITH_OPS | COMPARE_OPS | LOGIC_OPS
-
-
-@dataclass(frozen=True)
-class Clause:
-    """A single clause in a path condition (atomic Boolean expression)."""
-
-    expr: SMTExpr
-    repr_string: str
-
-    def __repr__(self) -> str:
-        return f"Clause({self.repr_string})"
 
 
 class SMTBackend(ABC):
@@ -128,7 +116,6 @@ class SMTBackend(ABC):
 
 
 __all__ = [
-    "Clause",
     "SMTBackend",
     "SMTExpr",
     "SatResult",

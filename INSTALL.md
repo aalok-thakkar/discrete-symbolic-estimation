@@ -13,7 +13,7 @@ cd discrete-symbolic-estimation
 uv sync                               # installs runtime + dev deps
 uv pip install -e ".[dev,plot]"       # editable + matplotlib for `dise plot`
 uv run dise --version
-uv run pytest                         # 220+ tests, ~1 min on a laptop
+uv run pytest                         # 290+ tests, ~1 min on a laptop
 ```
 
 The `dise` command is registered as a script entry point and is
@@ -64,13 +64,13 @@ A green install means all four of the following commands succeed:
 
 ```bash
 uv run dise version
-uv run dise list                                         # 10 benchmarks
+uv run dise list                                         # 12 benchmarks
 uv run pytest                                            # full unit-test suite
 uv run dise compare integer_sqrt_correct_U\(1,1023\) \
   --budget 400 --n-seeds 2 --mc-samples 1000             # ~30 s
 ```
 
-If `pytest` reports 220 passing tests and `dise compare` prints a
+If `pytest` reports 290+ passing tests and `dise compare` prints a
 three-row table (`plain_mc`, `stratified_random`, `dise`), the install
 is correct.
 

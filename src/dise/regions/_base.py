@@ -1,4 +1,29 @@
-"""Region base types: Status, SampleBatch, Region ABC."""
+"""Region base types: :class:`Status`, :class:`SampleBatch`, :class:`Region`.
+
+This module defines the abstract surface every concrete region in
+:mod:`dise.regions._concrete` implements. A *region*
+:math:`R_\\pi \\subseteq \\mathcal X` is the geometric counterpart of
+a path condition :math:`\\pi`; the frontier of regions partitions the
+input space and supports the stratified estimator at the heart of
+ASIP (see :doc:`/docs/algorithm` §2).
+
+The :class:`Region` ABC requires:
+
+* a **formula** (an opaque ``SMTExpr`` characterizing the region;
+  used for SMT-driven refinement and closure);
+* a **mass estimator** ``mass(distribution, smt, rng, n_mc)`` that
+  returns :math:`(\\hat w_\\pi, \\widehat{\\mathrm{Var}}(\\hat w_\\pi))`;
+* a **constrained sampler** ``sample(distribution, smt, rng, n)``
+  that draws :math:`n` samples from :math:`D \\,|\\, R_\\pi`;
+* a **membership test** ``contains(x)`` used by ``find_leaf_for``;
+* a flag ``is_axis_aligned`` distinguishing closed-form mass from
+  importance-sampled mass.
+
+For axis-aligned regions the mass is exact and the variance is zero —
+this is the structural variance-reduction lever that distinguishes
+DiSE from plain Monte Carlo (cf. Theorem 1 in
+:doc:`/docs/algorithm` §4).
+"""
 
 from __future__ import annotations
 
@@ -13,13 +38,28 @@ from ..smt import SMTBackend, SMTExpr
 
 
 class Status(Enum):
-    """Lifecycle status of a frontier leaf."""
+    """Lifecycle status of a frontier leaf.
 
+    A leaf is in exactly one of these states at any moment. ``OPEN``
+    is the only state under which the scheduler will allocate
+    additional samples or refine.
+    """
+
+    #: Sampled but not yet resolved; eligible for allocate / refine.
     OPEN = "open"
-    CLOSED_TRUE = "closed_true"     # phi == 1 throughout
-    CLOSED_FALSE = "closed_false"   # phi == 0 throughout
-    EMPTY = "empty"                 # SMT-proved region is empty (mass 0)
-    DIVERGED = "diverged"           # concolic exceeded max_branches
+    #: SMT-proved (or sample-determined) :math:`\mu_\pi = 1`.
+    CLOSED_TRUE = "closed_true"
+    #: SMT-proved (or sample-determined) :math:`\mu_\pi = 0`.
+    CLOSED_FALSE = "closed_false"
+    #: SMT-proved empty region; mass exactly 0 — never contributes
+    #: to :math:`\hat\mu` and is excluded from open / closed counts.
+    EMPTY = "empty"
+    #: Reserved: concolic execution exceeded ``max_concolic_branches``
+    #: on every sample drawn from this leaf. **Currently unreached**
+    #: by the scheduler — diverged samples are dropped silently (see
+    #: :class:`~dise.scheduler.ASIPScheduler._record_observation`).
+    #: Wired in the type system for future use; do not rely on it.
+    DIVERGED = "diverged"
 
 
 @dataclass

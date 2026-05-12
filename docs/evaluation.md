@@ -1,7 +1,8 @@
 # Evaluation methodology
 
-We evaluate DiSE against two baselines on a suite of **eleven** integer
-benchmarks. This document spells out exactly how the experiments are
+We evaluate DiSE against two baselines on a suite of **twelve**
+integer benchmarks. This document spells out exactly how the
+experiments are
 constructed; the full reproduction commands are in
 [`EXPERIMENTS.md`](../EXPERIMENTS.md).
 
@@ -21,6 +22,7 @@ experiment runner can iterate uniformly.
 
 | Name                                          | Framing             | Description                                                  | Key knob       |
 |-----------------------------------------------|---------------------|--------------------------------------------------------------|----------------|
+| **`coin_machine_U(1,9999)`**                  | **pedagogical**     | **Three-region branching toy with a rare bug; ASIP's intro example.** | **$N$** |
 | `gcd_steps_le_5_BG(p=0.1,N=100)`              | output-property     | Euclidean GCD step count $\le k$. The brief's running example. | $k$            |
 | `modpow_fits_in_4b_m=37`                      | output-property     | Modular exponentiation fits in $w$ bits.                     | $w$, $m$       |
 | `miller_rabin_w=2_BG(p=0.05,N=200)`           | output-property     | Miller-Rabin (witness 2) accepts $n$.                        | witness, $N$   |

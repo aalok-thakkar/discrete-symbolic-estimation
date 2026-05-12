@@ -69,6 +69,11 @@ class SchedulerConfig:
     # gain-per-cost falls below this threshold. Default 0 keeps
     # backward-compatible behavior.
     min_gain_per_cost: float = 0.0
+    # Certified half-width method (see ``compute_estimator_state``).
+    # ``"wilson"`` is tightest at fixed n; ``"anytime"`` is sound under
+    # the scheduler's adaptive stopping rule (recommended for ATVA-
+    # style certificates — see docs/algorithm.md §13).
+    method: Literal["wilson", "anytime", "bernstein", "empirical-bernstein"] = "wilson"
     bootstrap_samples: int = 200
     batch_size: int = 50
     refinement_cost_in_samples: float = 1.0
@@ -472,7 +477,7 @@ class ASIPScheduler:
         self._allocate_one_batch(self.frontier.root, n)
 
     def _should_terminate(self) -> tuple[bool, EstimatorState]:
-        state = compute_estimator_state(self.frontier, self.config.delta)
+        state = compute_estimator_state(self.frontier, self.config.delta, method=self.config.method)
         if (
             self.config.budget_samples is not None
             and self.samples_used >= self.config.budget_samples
@@ -538,7 +543,7 @@ class ASIPScheduler:
             self._try_close_all()
             self._log_iteration(iter_idx, best, state)
 
-        final_state = compute_estimator_state(self.frontier, self.config.delta)
+        final_state = compute_estimator_state(self.frontier, self.config.delta, method=self.config.method)
         return SchedulerResult(
             final_estimator=final_state,
             iterations=self.iterations,

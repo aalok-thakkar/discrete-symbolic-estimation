@@ -53,6 +53,7 @@ data flow.
 | `dise.cli`            | `dise list / run / compare / experiment / plot / version`.                                        |
 | `dise.plot`           | Matplotlib helpers for `dise plot`.                                                               |
 | `dise.benchmarks.*`   | Concrete benchmark instances + registry.                                                          |
+| `dise.integrations.*` | Optional adapters to third-party libraries (`hypothesis`).                                        |
 
 ## 3. Key data types
 
@@ -128,7 +129,7 @@ src/dise/
 │   └── __init__.py
 ├── smt/
 │   ├── __init__.py         # default_backend, has_z3
-│   ├── base.py             # SMTBackend, Clause, SatResult
+│   ├── base.py             # SMTBackend ABC, SatResult
 │   ├── mock.py             # MockBackend + MockExpr
 │   ├── cache.py            # CachedBackend, CacheStats
 │   └── z3_backend.py       # Z3Backend
@@ -142,19 +143,24 @@ src/dise/
 ├── sampler/
 │   └── __init__.py         # RejectionSampler, IntegerLatticeMHSampler
 ├── estimator/
-│   ├── __init__.py         # Bernstein / MP-EB / Wilson + compute_estimator_state
-│   └── api.py              # estimate() + EstimationResult
+│   ├── __init__.py         # Bernstein / MP-EB / Wilson / anytime + compute_estimator_state
+│   └── api.py              # estimate() + failure_probability() + EstimationResult
 ├── scheduler/
 │   └── __init__.py         # ASIPScheduler + variance-aware refinement
 ├── baselines/
 │   └── __init__.py         # PlainMonteCarlo, StratifiedRandomMC, DiSEBaseline
 ├── experiment/
 │   └── __init__.py         # multi-seed runner, JSON reports, aggregates
+├── integrations/
+│   ├── __init__.py         # third-party adapters (optional dependencies)
+│   └── hypothesis.py       # Hypothesis SearchStrategy → DiSE Distribution
 └── benchmarks/             # registered benchmark suite
     ├── __init__.py
     ├── _base.py            # Benchmark protocol + registry
     ├── _common.py          # argparser + helpers
+    ├── assertion_overflow.py
     ├── bitvector_kernels.py
+    ├── coin_machine.py     # pedagogical intro example
     ├── collatz.py
     ├── gcd_geometric.py
     ├── integer_sqrt.py

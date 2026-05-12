@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added (project-wide audit-driven refactor)
+
+- **CLI**: ``dise run`` now accepts ``--method
+  {wilson,anytime,bernstein,empirical-bernstein}``, ``dise compare``
+  and ``dise experiment`` accept ``--epsilon``. The ``method``
+  kwarg is plumbed end-to-end through :class:`SchedulerConfig`,
+  :func:`dise.estimate`, and :func:`dise.failure_probability`.
+- **Docs**: three new reference documents — [`docs/tutorial.md`](docs/tutorial.md)
+  (worked walkthrough), [`docs/api-reference.md`](docs/api-reference.md)
+  (consolidated Python-API reference), and
+  [`docs/cli-reference.md`](docs/cli-reference.md) (subcommand-by-
+  subcommand). README's documentation table updated to surface them.
+
+### Changed
+
+- **Public API surface**: dead :class:`Clause` class removed from
+  :mod:`dise.smt`; :class:`Status.DIVERGED` retained but documented
+  as reserved-for-future-use.
+- **Deduplicated** ``ground_truth_mc``: the version in
+  :mod:`dise.benchmarks._common` now re-exports from
+  :mod:`dise.experiment` (single source of truth).
+- **Stale counts fixed**: ``dise list`` now reports 12 benchmarks (was
+  10/11/"eleven" in various docs); test suite is 290+ items (was
+  220/250/251 across docs).
+- **Documentation**: ``evaluation.md`` benchmark table now includes
+  the ``coin_machine`` row; ``architecture.md`` file-layout + module
+  table now lists ``benchmarks/coin_machine``,
+  ``benchmarks/assertion_overflow``, ``integrations/`` and
+  ``integrations/hypothesis``.
+- **Sparse docstrings polished** across :mod:`dise.regions._base`,
+  :mod:`dise.regions._concrete`, :mod:`dise.integrations`,
+  :mod:`dise.benchmarks._common`, plus :class:`Baseline`,
+  :class:`DiSEBaseline`, :func:`save_report`, :func:`load_report`,
+  :func:`ground_truth_mc`, :func:`run_method`, :func:`default_methods`.
+- **Citation fixes**: ``related-work.md`` corrects "McBook" → "Owen
+  (2013)"; the internal inverse-normal-CDF approximation is now
+  correctly attributed to Acklam (2003).
+- **Type-hint restoration** on every concrete
+  :class:`~dise.regions.Region` subclass's ``mass`` / ``sample``
+  methods (had been elided from the ABC's signature).
+- ``failure_probability`` docstring now carries a ``.. warning::``
+  block about the unbounded default ``budget=None``.
+
 ### Added (anytime-valid + intro example + Hypothesis bridge)
 - **Anytime-valid Wilson bound.** New
   `dise.estimator.wilson_halfwidth_anytime` and
@@ -82,13 +125,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - SMT abstraction (Z3 + MockBackend + CachedBackend).
   - RejectionSampler and IntegerLatticeMHSampler.
   - Baselines (PlainMC, StratifiedRandomMC) for comparison.
-  - 10 benchmarks: GCD, modpow, Miller-Rabin, bitvector kernels,
+  - Initially 10 benchmarks (extended to 12 in subsequent unreleased
+    work; see the *Added* section above). The 0.1.0 set: GCD, modpow,
+    Miller-Rabin, bitvector kernels (popcount / parity / log2),
     Collatz, sieve primality, integer sqrt, sparse trie.
   - Multi-seed experiment runner with JSON reports + matplotlib
     plotting.
   - Top-level `dise` CLI (list / run / compare / experiment / plot).
   - Dockerfile + `scripts/reproduce.sh` for hermetic reproduction.
   - 251 tests (unit + Hypothesis property tests + CLI smoke tests).
+    Subsequent unreleased work brings the suite to 290+ tests.
   - GitHub Actions CI workflow.
   - Full proofs of variance / coverage / closure theorems in
     `docs/algorithm.md`.

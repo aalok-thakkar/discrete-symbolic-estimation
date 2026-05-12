@@ -19,9 +19,12 @@ import argparse
 import json
 import os
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from . import __version__
+
+if TYPE_CHECKING:
+    from .experiment import ExperimentReport
 
 
 def _cmd_list(_args: argparse.Namespace) -> int:
@@ -48,6 +51,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         no_budget=args.no_budget,
         budget_seconds=args.budget_seconds,
         min_gain_per_cost=args.min_gain_per_cost,
+        method=args.method,
         bootstrap=args.bootstrap,
         batch_size=args.batch_size,
         seed=args.seed,
@@ -67,7 +71,12 @@ def _cmd_compare(args: argparse.Namespace) -> int:
     from .experiment import default_methods, run_experiment, save_report
 
     bench = get_benchmark(args.benchmark)
-    methods = default_methods(budget=args.budget, bootstrap=args.bootstrap, batch_size=args.batch_size)
+    methods = default_methods(
+        budget=args.budget,
+        bootstrap=args.bootstrap,
+        batch_size=args.batch_size,
+        epsilon=args.epsilon,
+    )
     report = run_experiment(
         benchmark_name=bench.name,
         description=bench.description,
@@ -100,7 +109,10 @@ def _cmd_experiment(args: argparse.Namespace) -> int:
         bench = get_benchmark(name)
         print(f"# running {name} ...", file=sys.stderr)
         methods = default_methods(
-            budget=args.budget, bootstrap=args.bootstrap, batch_size=args.batch_size
+            budget=args.budget,
+            bootstrap=args.bootstrap,
+            batch_size=args.batch_size,
+            epsilon=args.epsilon,
         )
         report = run_experiment(
             benchmark_name=bench.name,
@@ -151,7 +163,7 @@ def _cmd_version(_args: argparse.Namespace) -> int:
     return 0
 
 
-def _print_compare_table(report) -> None:
+def _print_compare_table(report: ExperimentReport) -> None:
     print(f"# benchmark: {report.benchmark}")
     print(f"# {report.description}")
     if report.mc_truth is not None:
@@ -215,6 +227,10 @@ def make_parser() -> argparse.ArgumentParser:
                     help="optional wall-clock cap in seconds")
     pr.add_argument("--min-gain-per-cost", type=float, default=0.0,
                     help="diminishing-returns floor (default 0)")
+    pr.add_argument("--method", type=str, default="wilson",
+                    choices=["wilson", "anytime", "bernstein", "empirical-bernstein"],
+                    help="certified half-width construction (default 'wilson'; "
+                         "'anytime' for ATVA-grade soundness under adaptive stopping)")
     pr.add_argument("--bootstrap", type=int, default=200)
     pr.add_argument("--batch-size", type=int, default=50)
     pr.add_argument("--seed", type=int, default=0)
@@ -230,6 +246,8 @@ def make_parser() -> argparse.ArgumentParser:
         help="run DiSE + baselines on one benchmark with N seeds",
     )
     pc.add_argument("benchmark", type=str)
+    pc.add_argument("--epsilon", type=float, default=0.05,
+                    help="target half-width for DiSE (passed through to estimate())")
     pc.add_argument("--budget", type=int, default=5000)
     pc.add_argument("--bootstrap", type=int, default=200)
     pc.add_argument("--batch-size", type=int, default=50)
@@ -250,6 +268,8 @@ def make_parser() -> argparse.ArgumentParser:
         default=None,
         help="subset of benchmark names (default: all registered)",
     )
+    pe.add_argument("--epsilon", type=float, default=0.05,
+                    help="target half-width for DiSE (passed through to estimate())")
     pe.add_argument("--budget", type=int, default=5000)
     pe.add_argument("--bootstrap", type=int, default=200)
     pe.add_argument("--batch-size", type=int, default=50)

@@ -1,7 +1,25 @@
-"""Concrete region types: Empty, Unconstrained, AxisAlignedBox, GeneralRegion.
+"""Concrete region types and the dispatch that builds them.
 
-Plus :func:`build_region`, the dispatcher that turns an arbitrary SMT
-formula into the most-specific region for it.
+Four implementations of the :class:`~dise.regions._base.Region` ABC
+plus the :func:`build_region` factory:
+
+* :class:`EmptyRegion` — SMT-proved empty; mass exactly :math:`0`.
+* :class:`UnconstrainedRegion` — the full input support; mass
+  exactly :math:`1`. The frontier's root.
+* :class:`AxisAlignedBox` — Cartesian product of per-variable
+  intervals; closed-form mass with zero variance. Used whenever the
+  path condition is reducible to one-sided bounds on each variable.
+* :class:`GeneralRegion` — an axis-aligned envelope (the
+  over-approximation) plus a residual SMT predicate; mass via
+  importance sampling from the envelope.
+
+:func:`build_region` dispatches between them by attempting an
+axis-aligned reduction first (using :class:`~dise.smt.SMTBackend`
+helpers), and falling back to :class:`GeneralRegion` only when at
+least one clause is non-axis-aligned or contains arithmetic the
+backend cannot simplify. See :doc:`/docs/algorithm` §3 for the role
+of closed-form vs IS mass and Theorem 1 (§4) for how variances
+compose at the frontier level.
 """
 
 from __future__ import annotations
@@ -31,10 +49,22 @@ class EmptyRegion(Region):
     def is_axis_aligned(self) -> bool:
         return True
 
-    def mass(self, distribution, smt, rng, n_mc=1000):
+    def mass(
+        self,
+        distribution: ProductDistribution,
+        smt: SMTBackend,
+        rng: np.random.Generator,
+        n_mc: int = 1000,
+    ) -> tuple[float, float]:
         return (0.0, 0.0)
 
-    def sample(self, distribution, smt, rng, n):
+    def sample(
+        self,
+        distribution: ProductDistribution,
+        smt: SMTBackend,
+        rng: np.random.Generator,
+        n: int,
+    ) -> SampleBatch:
         return SampleBatch(
             inputs={v: np.empty(0, dtype=np.int64) for v in distribution.variables},
             n=0,
@@ -67,10 +97,22 @@ class UnconstrainedRegion(Region):
     def is_axis_aligned(self) -> bool:
         return True
 
-    def mass(self, distribution, smt, rng, n_mc=1000):
+    def mass(
+        self,
+        distribution: ProductDistribution,
+        smt: SMTBackend,
+        rng: np.random.Generator,
+        n_mc: int = 1000,
+    ) -> tuple[float, float]:
         return (1.0, 0.0)
 
-    def sample(self, distribution, smt, rng, n):
+    def sample(
+        self,
+        distribution: ProductDistribution,
+        smt: SMTBackend,
+        rng: np.random.Generator,
+        n: int,
+    ) -> SampleBatch:
         inputs = distribution.sample(rng, n)
         return SampleBatch(inputs=inputs, n=n, rejection_ratio=None)
 
@@ -114,7 +156,13 @@ class AxisAlignedBox(Region):
     def is_axis_aligned(self) -> bool:
         return True
 
-    def mass(self, distribution, smt, rng, n_mc=1000):
+    def mass(
+        self,
+        distribution: ProductDistribution,
+        smt: SMTBackend,
+        rng: np.random.Generator,
+        n_mc: int = 1000,
+    ) -> tuple[float, float]:
         w = 1.0
         for v, (lo, hi) in self._bounds.items():
             if v not in distribution.factors:
@@ -122,7 +170,13 @@ class AxisAlignedBox(Region):
             w *= distribution.factors[v].mass(lo, hi)
         return (w, 0.0)
 
-    def sample(self, distribution, smt, rng, n):
+    def sample(
+        self,
+        distribution: ProductDistribution,
+        smt: SMTBackend,
+        rng: np.random.Generator,
+        n: int,
+    ) -> SampleBatch:
         if n <= 0:
             return SampleBatch(
                 inputs={v: np.empty(0, dtype=np.int64) for v in distribution.variables},
@@ -183,7 +237,13 @@ class GeneralRegion(Region):
     def is_axis_aligned(self) -> bool:
         return False
 
-    def mass(self, distribution, smt, rng, n_mc=1000):
+    def mass(
+        self,
+        distribution: ProductDistribution,
+        smt: SMTBackend,
+        rng: np.random.Generator,
+        n_mc: int = 1000,
+    ) -> tuple[float, float]:
         w_base, _ = self._base.mass(distribution, smt, rng, n_mc)
         if w_base <= 0.0:
             return (0.0, 0.0)
@@ -208,7 +268,13 @@ class GeneralRegion(Region):
         w_var = w_base * w_base * var_p
         return (w_hat, w_var)
 
-    def sample(self, distribution, smt, rng, n):
+    def sample(
+        self,
+        distribution: ProductDistribution,
+        smt: SMTBackend,
+        rng: np.random.Generator,
+        n: int,
+    ) -> SampleBatch:
         if n <= 0:
             return SampleBatch(
                 inputs={v: np.empty(0, dtype=np.int64) for v in distribution.variables},

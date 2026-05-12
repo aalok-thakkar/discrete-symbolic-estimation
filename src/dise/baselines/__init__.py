@@ -61,6 +61,23 @@ class BaselineResult:
 
 
 class Baseline(ABC):
+    """Common protocol shared by DiSE and its comparators.
+
+    Subclasses provide a class-level ``name`` (used as the row label
+    in :class:`~dise.experiment.ExperimentReport`) and implement
+    :meth:`run` to take a program, distribution, property, budget,
+    confidence parameter, and seed, returning a
+    :class:`BaselineResult`.
+
+    The protocol is intentionally narrow: anything that can answer
+    "given these inputs, here is :math:`\\hat\\mu` and a certified
+    interval" can be a baseline. :func:`dise.experiment.run_experiment`
+    iterates uniformly over baselines, so adding a new comparator is
+    just subclassing :class:`Baseline` and including the instance in
+    the ``methods`` list.
+    """
+
+    #: Short identifier (e.g. ``"plain_mc"``); appears in reports.
     name: str
 
     @abstractmethod
@@ -72,7 +89,33 @@ class Baseline(ABC):
         budget: int,
         delta: float,
         seed: int,
-    ) -> BaselineResult: ...
+    ) -> BaselineResult:
+        """Run the estimator on one ``(program, distribution, property)``
+        triple at a fixed seed.
+
+        Parameters
+        ----------
+        program : Callable
+            The program under test.
+        distribution : Mapping[str, Distribution]
+            Operational input distribution; one factor per kwarg of
+            ``program``.
+        property_fn : Callable[[Any], bool]
+            Boolean predicate on the program's output.
+        budget : int
+            Total per-run sample budget.
+        delta : float
+            Confidence parameter; the returned interval must cover
+            :math:`\\mu` with probability :math:`\\ge 1 - \\delta`.
+        seed : int
+            RNG seed for reproducibility.
+
+        Returns
+        -------
+        BaselineResult
+            ``mu_hat``, certified ``interval``, ``samples_used``,
+            ``wall_clock_s``, and method-specific ``extras``.
+        """
 
 
 # ---------------------------------------------------------------------------
@@ -216,8 +259,25 @@ class StratifiedRandomMC(Baseline):
 
 
 class DiSEBaseline(Baseline):
-    """Adapter exposing :func:`dise.estimate` through the :class:`Baseline`
-    protocol so the experiment runner can iterate uniformly over methods.
+    """Adapter exposing :func:`dise.estimate` through the
+    :class:`Baseline` protocol so :func:`dise.experiment.run_experiment`
+    can iterate uniformly across methods.
+
+    All keyword arguments accepted by :func:`dise.estimate` (e.g.
+    ``epsilon``, ``method``, ``bootstrap``, ``batch_size``,
+    ``backend``, ``budget_seconds``, ``min_gain_per_cost``,
+    ``max_refinement_depth``) can be passed to the constructor and
+    will be forwarded on every :meth:`run` call. The three
+    Baseline-protocol-mandated kwargs (``budget``, ``delta``, ``seed``)
+    are supplied by the runner and override any matching constructor
+    kwargs.
+
+    Examples
+    --------
+    >>> b = DiSEBaseline(epsilon=0.02, method="anytime", bootstrap=200)
+    >>> # In a run loop:
+    >>> # result = b.run(program=p, distribution=d, property_fn=phi,
+    >>> #                budget=5000, delta=0.05, seed=0)
     """
 
     name = "dise"
@@ -234,6 +294,8 @@ class DiSEBaseline(Baseline):
         delta: float,
         seed: int,
     ) -> BaselineResult:
+        """Run :func:`dise.estimate` with the constructor's stored
+        kwargs (overridden by ``budget``, ``delta``, ``seed``)."""
         from ..estimator.api import estimate
 
         t0 = time.perf_counter()

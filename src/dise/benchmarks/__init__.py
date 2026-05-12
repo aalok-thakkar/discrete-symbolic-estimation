@@ -11,8 +11,9 @@ Importing this package registers every benchmark, so callers can
 enumerate them via :func:`~dise.benchmarks._base.list_benchmarks` or fetch
 them via :func:`~dise.benchmarks._base.get_benchmark`.
 
-Use :class:`dise.estimate` directly for ad-hoc programs, and the top-
-level ``dise`` CLI (``dise benchmark <name>``) or the experiment runner
+Use :func:`dise.estimate` directly for ad-hoc programs, and the top-
+level ``dise`` CLI (``dise run <name>``, ``dise compare <name>``,
+``dise experiment``) or the experiment runner
 :func:`dise.experiment.run_experiment` for systematic evaluation.
 """
 

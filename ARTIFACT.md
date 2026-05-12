@@ -9,7 +9,7 @@ NFM, and TACAS artifact-evaluation committees.
 | Badge        | Status | Where to verify                                                  |
 |--------------|--------|------------------------------------------------------------------|
 | **Available**  | ✅ | Public GitHub repository (MIT-licensed), Docker image, archived release. |
-| **Functional** | ✅ | `pytest` (≥ 250 tests) + the `dise` CLI sanity commands pass.   |
+| **Functional** | ✅ | `pytest` (≥ 290 tests) + the `dise` CLI sanity commands pass.   |
 | **Reusable**   | ✅ | Public Python API (`estimate`, `failure_probability`), benchmark protocol, JSON I/O. |
 
 ## 1. Available
@@ -37,7 +37,7 @@ uv run pytest
 
 # 4. CLI smoke tests
 uv run dise version
-uv run dise list                # 11 registered benchmarks
+uv run dise list                # 12 registered benchmarks
 uv run dise compare 'integer_sqrt_correct_U(1,1023)' \
     --budget 400 --n-seeds 2 --mc-samples 1000
 ```

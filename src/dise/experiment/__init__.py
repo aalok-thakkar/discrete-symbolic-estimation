@@ -115,11 +115,45 @@ class ExperimentReport:
 
 
 def save_report(report: ExperimentReport, path: str) -> None:
+    """Serialize an :class:`ExperimentReport` to JSON at ``path``.
+
+    Lossless modulo the floating-point representation used by
+    :mod:`json`. Round-trip via :func:`load_report` returns a plain
+    ``dict[str, Any]`` rather than reconstructing the dataclasses —
+    downstream tools (plotting, table generation) consume the dict
+    form directly.
+
+    Parameters
+    ----------
+    report : ExperimentReport
+        The report to persist.
+    path : str
+        Filesystem path; the file is overwritten if it exists.
+    """
     with open(path, "w") as f:
         json.dump(report.to_dict(), f, indent=2)
 
 
 def load_report(path: str) -> dict[str, Any]:
+    """Load a JSON experiment report from ``path``.
+
+    Returns the *dict-of-dicts* form (as written by
+    :func:`save_report`), not an :class:`ExperimentReport`
+    dataclass instance — round-trip reconstruction is intentionally
+    asymmetric so consumers (e.g. ``dise plot``) can read reports
+    without importing :mod:`dise.experiment`.
+
+    Parameters
+    ----------
+    path : str
+        Filesystem path to a JSON file written by :func:`save_report`.
+
+    Returns
+    -------
+    dict[str, Any]
+        The deserialized report. Keys: ``benchmark``, ``description``,
+        ``mc_truth``, ``mc_se``, ``runs``, ``aggregates``.
+    """
     with open(path) as f:
         return json.load(f)
 
@@ -136,6 +170,34 @@ def ground_truth_mc(
     n_samples: int,
     seed: int = 12_345,
 ) -> tuple[float, float]:
+    """Plain Monte-Carlo reference estimate of :math:`\\mu`.
+
+    Used as a *regression check*, not a certified bound. Returns the
+    point estimate together with its analytic standard error
+    :math:`\\sqrt{\\hat\\mu(1 - \\hat\\mu) / n}`. Downstream
+    aggregators compare DiSE's certified interval against
+    :math:`\\hat\\mu_{\\text{MC}} \\pm 1.96 \\,\\mathrm{se}` to detect
+    severe coverage failures.
+
+    Parameters
+    ----------
+    program : Callable
+        Program under test.
+    distribution : Mapping[str, Distribution]
+        Operational distribution.
+    property_fn : Callable[[Any], bool]
+        Boolean property of the program's output.
+    n_samples : int
+        Sample count (often 20 000 in the paper's tables).
+    seed : int, default 12345
+        Independent RNG seed so the reference is reproducible across
+        all methods being compared.
+
+    Returns
+    -------
+    tuple[float, float]
+        ``(mu, se)``.
+    """
     rng = np.random.default_rng(seed)
     dist = ProductDistribution(factors=dict(distribution))
     batch = dist.sample(rng, n_samples)
@@ -161,6 +223,35 @@ def run_method(
     benchmark_name: str,
     mc_truth: float | None,
 ) -> RunResult:
+    """Run one method on one ``(program, distribution, property)`` triple.
+
+    Calls :meth:`Baseline.run`, measures wall-clock time (taking the
+    larger of the baseline's self-reported time and the externally
+    measured time), and wraps the result in a :class:`RunResult` —
+    the row type stored in :class:`ExperimentReport`.
+
+    Parameters
+    ----------
+    method : Baseline
+        The comparator (e.g. :class:`PlainMonteCarlo`,
+        :class:`DiSEBaseline`).
+    program, distribution, property_fn :
+        Forwarded to :meth:`Baseline.run`.
+    budget, delta, seed :
+        Forwarded to :meth:`Baseline.run`.
+    benchmark_name : str
+        Identifier copied into the :class:`RunResult` for downstream
+        aggregation.
+    mc_truth : float or None
+        Reference value used to populate
+        :attr:`RunResult.interval_contains_truth` and
+        :attr:`RunResult.error_vs_truth`. Pass ``None`` to skip those
+        checks.
+
+    Returns
+    -------
+    RunResult
+    """
     t0 = time.perf_counter()
     result = method.run(
         program=program,
@@ -284,15 +375,49 @@ def run_experiment(
 
 
 def default_methods(
-    budget: int, bootstrap: int = 200, batch_size: int = 50
+    budget: int,
+    bootstrap: int = 200,
+    batch_size: int = 50,
+    epsilon: float = 0.05,
+    n_strata: int = 16,
 ) -> list[Baseline]:
-    """The standard comparator set used in the paper's tables."""
+    """Return the canonical comparator set used in the paper's tables.
+
+    Includes :class:`PlainMonteCarlo`, :class:`StratifiedRandomMC`
+    (with ``n_strata`` hash buckets), and :class:`DiSEBaseline` with
+    the given ``bootstrap``, ``batch_size``, and ``epsilon`` knobs.
+    The ``budget`` parameter is accepted for symmetry with the
+    individual constructors but is ultimately set by the experiment
+    runner per call.
+
+    Parameters
+    ----------
+    budget : int
+        Total sample budget per run; mirrored from the caller for
+        documentation. Each :class:`Baseline.run` receives the same
+        budget when invoked by :func:`run_experiment`.
+    bootstrap : int, default 200
+        Bootstrap samples for the DiSE baseline.
+    batch_size : int, default 50
+        Per-allocation batch size for the DiSE baseline.
+    epsilon : float, default 0.05
+        Target half-width for DiSE; controls when
+        ``terminated_reason='epsilon_reached'`` fires.
+    n_strata : int, default 16
+        Number of random hash buckets for the stratified-MC baseline.
+
+    Returns
+    -------
+    list[Baseline]
+        Ordered ``[plain_mc, stratified_random, dise]``.
+    """
     return [
         PlainMonteCarlo(),
-        StratifiedRandomMC(n_strata=16),
+        StratifiedRandomMC(n_strata=n_strata),
         DiSEBaseline(
             bootstrap=bootstrap,
             batch_size=batch_size,
+            epsilon=epsilon,
         ),
     ]
 

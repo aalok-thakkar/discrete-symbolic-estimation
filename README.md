@@ -79,8 +79,8 @@ wrapper is provided for ergonomics.
 
 ```bash
 uv sync                                       # or: pip install -e ".[dev,plot]"
-uv run dise list                              # 11 registered benchmarks
-uv run pytest                                 # ~250+ tests
+uv run dise list                              # 12 registered benchmarks
+uv run pytest                                 # 290+ tests
 ```
 
 See [`INSTALL.md`](INSTALL.md) for details, Docker instructions, and
@@ -217,18 +217,21 @@ QUICK=1 scripts/reproduce.sh          # fast smoke
 
 ## Documentation
 
-| Document                                       | What's there                                                                                |
-|------------------------------------------------|---------------------------------------------------------------------------------------------|
-| [`docs/algorithm.md`](docs/algorithm.md)       | Problem statement, ASIP pseudocode, proofs of Theorems 1–3, complexity, anytime semantics.  |
-| [`docs/architecture.md`](docs/architecture.md) | Module diagram, key data types, invariants, file layout.                                    |
-| [`docs/evaluation.md`](docs/evaluation.md)     | Experimental methodology: comparators, benchmarks, metrics, soundness verification.         |
-| [`docs/related-work.md`](docs/related-work.md) | Bibliography and positioning vs. PSE, probabilistic model checkers, sampling-based MC.     |
-| [`docs/hypothesis-integration.md`](docs/hypothesis-integration.md) | DiSE × Hypothesis: distribution-aware property-based testing.                          |
-| [`docs/limitations.md`](docs/limitations.md)   | What DiSE does *not* support; open extensions ranked by impact.                             |
-| [`INSTALL.md`](INSTALL.md)                     | Install via `uv`, `pip`, or Docker.                                                         |
-| [`EXPERIMENTS.md`](EXPERIMENTS.md)             | Exact reproduction commands for every paper table and figure.                                |
-| [`ARTIFACT.md`](ARTIFACT.md)                   | Artifact-evaluation checklist (functional / reusable / available).                          |
-| [`CHANGELOG.md`](CHANGELOG.md)                 | Per-release notes.                                                                          |
+| Document                                                          | What's there                                                                                |
+|-------------------------------------------------------------------|---------------------------------------------------------------------------------------------|
+| [`docs/tutorial.md`](docs/tutorial.md)                            | First-time-user walkthrough using the ``coin_machine`` example.                             |
+| [`docs/algorithm.md`](docs/algorithm.md)                          | Problem statement, ASIP pseudocode, proofs of Theorems 1–3, complexity, anytime semantics.  |
+| [`docs/architecture.md`](docs/architecture.md)                    | Module diagram, key data types, invariants, file layout.                                    |
+| [`docs/api-reference.md`](docs/api-reference.md)                  | Consolidated Python-API reference, module by module.                                        |
+| [`docs/cli-reference.md`](docs/cli-reference.md)                  | Every ``dise`` subcommand and its flags.                                                    |
+| [`docs/evaluation.md`](docs/evaluation.md)                        | Experimental methodology: comparators, benchmarks, metrics, soundness verification.         |
+| [`docs/related-work.md`](docs/related-work.md)                    | Bibliography and positioning vs. PSE, probabilistic model checkers, sampling-based MC.      |
+| [`docs/hypothesis-integration.md`](docs/hypothesis-integration.md)| DiSE × Hypothesis: distribution-aware property-based testing.                               |
+| [`docs/limitations.md`](docs/limitations.md)                      | What DiSE does *not* support; open extensions ranked by impact.                             |
+| [`INSTALL.md`](INSTALL.md)                                        | Install via ``uv``, ``pip``, or Docker.                                                     |
+| [`EXPERIMENTS.md`](EXPERIMENTS.md)                                | Exact reproduction commands for every paper table and figure.                               |
+| [`ARTIFACT.md`](ARTIFACT.md)                                      | Artifact-evaluation checklist (functional / reusable / available).                          |
+| [`CHANGELOG.md`](CHANGELOG.md)                                    | Per-release notes.                                                                          |
 
 ## Citation
 

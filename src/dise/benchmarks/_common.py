@@ -1,24 +1,72 @@
-"""Shared utilities for benchmark scripts."""
+"""Shared utilities for the benchmark scripts.
+
+Every benchmark module in :mod:`dise.benchmarks` follows the same
+shape: it builds a :class:`~dise.benchmarks.Benchmark` instance via a
+``_build(...)`` factory, registers a canonical configuration, and
+exposes a ``main()`` entry-point that runs the benchmark from the
+command line. This module provides the three helpers each ``main()``
+uses:
+
+* :func:`pick_backend` — turns the ``--backend`` and ``--cache-smt``
+  CLI flags into a concrete :class:`~dise.smt.SMTBackend` instance,
+  optionally wrapped in a :class:`~dise.smt.CachedBackend`.
+* :func:`common_argparser` — the shared ``argparse`` template; every
+  benchmark inherits the standard knobs (``--epsilon``, ``--delta``,
+  ``--budget``, ``--no-budget``, ``--budget-seconds``,
+  ``--min-gain-per-cost``, ``--bootstrap``, ``--batch-size``,
+  ``--seed``, ``--backend``, ``--cache-smt``, ``--mc-samples``,
+  ``--skip-mc``, ``--json-out``).
+* :func:`ground_truth_mc` — a plain-Monte-Carlo reference estimate
+  used as a regression check (re-exported by :mod:`dise.experiment`
+  for symmetry).
+* :func:`run_and_print` — the canonical wiring: MC ground truth (on
+  stderr) → :func:`dise.estimate` → JSON one-line summary (on stdout).
+
+The split between **stderr** (human-readable progress) and **stdout**
+(machine-readable JSON one-liner) is deliberate: piping
+``dise run … | jq …`` works while a human running the same command
+still sees the report.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
 import sys
-from collections.abc import Callable, Mapping
-from typing import Any
-
-import numpy as np
+from typing import Literal
 
 from dise import EstimationResult, default_backend, estimate
-from dise.distributions import Distribution, ProductDistribution
+from dise.experiment import ground_truth_mc
 from dise.smt import CachedBackend, MockBackend, SMTBackend
 from dise.smt import Z3Backend as _Z3Backend
 
 from ._base import Benchmark
 
 
-def pick_backend(name: str | None, cache: bool = False) -> SMTBackend:
+def pick_backend(
+    name: Literal["auto", "z3", "mock"] | None,
+    cache: bool = False,
+) -> SMTBackend:
+    """Construct an :class:`SMTBackend` from a CLI-style backend name.
+
+    Parameters
+    ----------
+    name :
+        ``"auto"`` or ``None`` →
+        :func:`~dise.smt.default_backend` (Z3 if installed, else
+        :class:`~dise.smt.MockBackend`). ``"z3"`` requires the
+        ``z3-solver`` package. ``"mock"`` returns
+        :class:`~dise.smt.MockBackend`.
+    cache : bool, default False
+        If ``True``, wrap the chosen backend in
+        :class:`~dise.smt.CachedBackend` (memoizes ``is_satisfiable``,
+        ``evaluate``, etc.; typical hit-rates of 40–60 % on the
+        headline benchmark).
+
+    Returns
+    -------
+    SMTBackend
+    """
     if name in (None, "auto"):
         backend: SMTBackend = default_backend()
     elif name == "z3":
@@ -61,6 +109,14 @@ def common_argparser(description: str) -> argparse.ArgumentParser:
         default=0.0,
         help="diminishing-returns floor for action selection (default 0)",
     )
+    p.add_argument(
+        "--method",
+        type=str,
+        default="wilson",
+        choices=["wilson", "anytime", "bernstein", "empirical-bernstein"],
+        help="certified half-width construction (default 'wilson'; "
+             "'anytime' for ATVA-grade soundness under adaptive stopping)",
+    )
     p.add_argument("--bootstrap", type=int, default=200, help="bootstrap samples")
     p.add_argument("--batch-size", type=int, default=50, help="samples per batch")
     p.add_argument("--seed", type=int, default=0, help="rng seed")
@@ -92,29 +148,6 @@ def common_argparser(description: str) -> argparse.ArgumentParser:
     return p
 
 
-def ground_truth_mc(
-    program: Callable[..., Any],
-    distribution: Mapping[str, Distribution],
-    property_fn: Callable[[Any], bool],
-    n_samples: int,
-    seed: int = 12345,
-) -> tuple[float, float]:
-    """Plain Monte Carlo on the unmodified program. Returns ``(mu, se)``."""
-    rng = np.random.default_rng(seed)
-    dist = ProductDistribution(factors=dict(distribution))
-    batch = dist.sample(rng, n_samples)
-    keys = list(distribution.keys())
-    hits = 0
-    for i in range(n_samples):
-        kwargs = {k: int(batch[k][i]) for k in keys}
-        out = program(**kwargs)
-        if bool(property_fn(out)):
-            hits += 1
-    mu = hits / n_samples
-    se = (mu * (1.0 - mu) / n_samples) ** 0.5
-    return mu, se
-
-
 def run_and_print(bench: Benchmark, args: argparse.Namespace) -> EstimationResult:
     backend = pick_backend(args.backend, cache=getattr(args, "cache_smt", False))
     print(f"=== Benchmark: {bench.name} ===", file=sys.stderr)
@@ -141,9 +174,13 @@ def run_and_print(bench: Benchmark, args: argparse.Namespace) -> EstimationResul
     )
     budget_seconds = getattr(args, "budget_seconds", None)
     min_gain_per_cost = getattr(args, "min_gain_per_cost", 0.0)
+    method: Literal["wilson", "anytime", "bernstein", "empirical-bernstein"] = (
+        getattr(args, "method", "wilson")
+    )
     print(
         f"Running DiSE: epsilon={args.epsilon}, delta={args.delta}, "
         f"budget={effective_budget!r}, budget_seconds={budget_seconds!r}, "
+        f"method={method!r}, "
         f"bootstrap={args.bootstrap}, batch_size={args.batch_size} ...",
         file=sys.stderr,
     )
@@ -156,6 +193,7 @@ def run_and_print(bench: Benchmark, args: argparse.Namespace) -> EstimationResul
         budget=effective_budget,
         budget_seconds=budget_seconds,
         min_gain_per_cost=min_gain_per_cost,
+        method=method,
         bootstrap=args.bootstrap,
         batch_size=args.batch_size,
         seed=args.seed,
@@ -217,7 +255,7 @@ def run_and_print(bench: Benchmark, args: argparse.Namespace) -> EstimationResul
 
 __all__ = [
     "common_argparser",
-    "ground_truth_mc",
+    "ground_truth_mc",  # re-exported from dise.experiment
     "pick_backend",
     "run_and_print",
 ]
