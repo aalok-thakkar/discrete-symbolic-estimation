@@ -7,7 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Added
+### Added (anytime-valid + intro example + Hypothesis bridge)
+- **Anytime-valid Wilson bound.** New
+  `dise.estimator.wilson_halfwidth_anytime` and
+  `compute_estimator_state(..., method="anytime")`. The bound is
+  time-uniform via Bonferroni-in-time on the Basel-normalized
+  $\delta_n = 6\delta/(\pi^2 n^2)$, so it remains valid under
+  data-dependent stopping and adaptive sample sizes — the recommended
+  setting for ATVA-style certificates under ASIP's adaptive schedule.
+- **Theorem 2 rewritten with explicit assumptions** (filtration,
+  stopping time, A1–A4) and an anytime-valid statement.
+  ``docs/algorithm.md`` §13 ("Statistical correctness under adaptive
+  choices") explicitly addresses adaptive sample sizes, optional
+  stopping, partition dependence, and refinement-decision correlation.
+- **Bibliography of anytime-valid concentration:** Robbins 1970,
+  Howard et al. 2021, Howard–Ramdas 2022, Waudby-Smith–Ramdas 2024 in
+  ``docs/related-work.md``.
+- **`coin_machine` intro benchmark.** A three-region branching program
+  with a rare bug — the canonical pedagogical example for ASIP.
+  Plain MC needs ~10^5 samples; DiSE certifies $\mu = 99/9999$ to
+  half-width 0 in ~200 concolic runs.
+- **`dise.integrations.hypothesis` adapter.** Tier-1 conversion of
+  `hypothesis.strategies.SearchStrategy` instances to DiSE
+  `Distribution`s (`from_integers`, `from_sampled_from`,
+  `auto_from_strategy`) plus `estimate_from_strategy` /
+  `estimate_from_strategies` entry points. Documented in
+  ``docs/hypothesis-integration.md`` together with the research
+  framing ("operational property-based testing").
+
+### Added (previous release — optional budget + assertion API)
 - **Optional sample budget.** `SchedulerConfig.budget_samples` and
   `estimate(budget=...)` now accept `None` to disable the sample cap.
   The algorithm runs until `epsilon_reached` (the *primary* stopping

@@ -95,10 +95,36 @@ target.
   examples.* Reference text on stratified sampling and variance
   reduction.
 
+### 5.1 Anytime-valid concentration (the adaptive case)
+
+DiSE's adaptive sampling and optional-stopping rule require *anytime-
+valid* bounds — fixed-$n$ Wilson is not enough. Implemented as
+``method="anytime"``:
+
+* **Robbins (1970).** *Statistical methods related to the laws of the
+  iterated logarithm.* Annals of Mathematical Statistics. The
+  foundational mixture-martingale argument.
+* **Darling, Robbins (1967).** Iterated-logarithm concentration that
+  spawned the mixing literature.
+* **Howard, Ramdas, McAuliffe, Sekhon (2021).** *Time-uniform Chernoff
+  bounds via nonnegative supermartingales.* Probability Surveys. The
+  modern reference; provides time-uniform Bernstein, Hoeffding, etc.
+* **Howard, Ramdas (2022).** *Sequential estimation of quantiles with
+  applications to A/B testing and best-arm identification.*
+  Bernoulli. Anytime-valid intervals for proportions, directly
+  applicable to per-leaf Bernoulli estimation.
+* **Waudby-Smith, Ramdas (2024).** *Estimating means of bounded random
+  variables by betting.* JRSS-B. State-of-the-art tight anytime-valid
+  intervals for bounded means; the natural follow-up to the current
+  union-bound-in-time construction.
+
 DiSE applies these classical bounds *per leaf*, with Bonferroni
 correction over the open-leaf count $K$. The structural-variance
 contribution from axis-aligned closed-form mass is what reduces the
-effective $K$ in practice.
+effective $K$ in practice. See [`algorithm.md`](algorithm.md) §13 for
+how the bounds are stitched together to survive the four adaptive-bias
+risks (adaptive sample sizes, optional stopping, partition dependence,
+refinement-decision correlation).
 
 ## 6. Standalone artifacts and tooling references
 
@@ -106,9 +132,26 @@ effective $K$ in practice.
 * **scipy.stats** for distribution primitives.
 * **numpy** for IS sampling.
 
-## 7. What DiSE adds, in one line
+## 7. Property-based testing (PBT)
+
+* **MacIver et al., *Hypothesis*.** The reference Python PBT library;
+  edge-case-biased generators for finding counterexamples.
+* **Claessen, Hughes (2000).** *QuickCheck: a lightweight tool for
+  random testing of Haskell programs.* ICFP 2000. The progenitor.
+
+**Positioning.** PBT asks *"is there any input that violates the
+property?"* — a one-counterexample question. DiSE asks *"what fraction
+of inputs from my operational distribution violates the property?"*
+— a quantitative question with a certified interval. The integration
+in [`docs/hypothesis-integration.md`](hypothesis-integration.md)
+converts Hypothesis strategies into DiSE distributions; the
+research direction it points to (operational PBT, adaptive
+strategy-region coupling) is a natural follow-on paper.
+
+## 8. What DiSE adds, in one line
 
 > **DiSE is the first prototype to combine adaptive SMT-driven
 > stratification, closed-form axis-aligned mass on LIA regions, and
-> Wilson-style certified intervals into a single anytime algorithm for
-> reliability estimation under structured discrete input distributions.**
+> anytime-valid certified intervals into a single algorithm for
+> reliability estimation under structured discrete input
+> distributions.**

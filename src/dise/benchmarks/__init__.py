@@ -22,6 +22,7 @@ from __future__ import annotations
 from . import (  # noqa: F401  (side-effect imports)
     assertion_overflow,
     bitvector_kernels,
+    coin_machine,
     collatz,
     gcd_geometric,
     integer_sqrt,

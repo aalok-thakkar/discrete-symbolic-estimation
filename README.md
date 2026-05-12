@@ -47,7 +47,10 @@ wrapper is provided for ergonomics.
 ## Highlights
 
 * **Anytime certified intervals.** Every iteration produces a valid
-  $(1 - \delta)$-coverage interval. Termination reasons
+  $(1 - \delta)$-coverage interval. ``method="anytime"`` uses a
+  time-uniform Wilson bound so the interval is sound under
+  data-dependent stopping and adaptive sample sizes (see
+  [`docs/algorithm.md`](docs/algorithm.md) §13). Termination reasons
   (`epsilon_reached`, `budget_exhausted`, `time_exhausted`,
   `no_actions_available`) are reported transparently.
 * **Optional budget.** The algorithm is *budget-neutral by design*:
@@ -84,7 +87,37 @@ See [`INSTALL.md`](INSTALL.md) for details, Docker instructions, and
 troubleshooting. For artifact-evaluation reviewers see
 [`ARTIFACT.md`](ARTIFACT.md).
 
-## Quickstart — output-property framing
+## Quickstart — pedagogical intro example
+
+A three-region branching program with a rare bug, designed so the
+partition refinement is *visible*:
+
+```python
+from dise import estimate, Uniform
+
+def coin_machine(x: int) -> int:
+    if x < 10:           return 0     # safe region A
+    if x < 100:          return 1     # always-flag region B
+    if x % 1000 == 0:    return 1     # rare bug (mass ≈ 0.09%)
+    return 0                          # safe region C-ok
+
+result = estimate(
+    program=coin_machine,
+    distribution={"x": Uniform(1, 9999)},
+    property_fn=lambda y: y == 1,
+    epsilon=0.005, delta=0.05,
+)
+print(result)
+# EstimationResult(mu_hat=0.0099, interval=[0.0099, 0.0099], samples=220, ...)
+```
+
+The truth is exactly $99/9999 \approx 0.0099$ (regions B and the
+``x % 1000 == 0`` slice). Plain MC needs $\Theta(1/\mu) \approx 10^5$
+samples to certify the rare bug at the same half-width; DiSE refines
+into four leaves (A, B, C-bug, C-ok) and certifies the answer in a
+few hundred concolic runs.
+
+## Quickstart — operational reliability (the running benchmark)
 
 ```python
 from dise import estimate, BoundedGeometric
@@ -109,6 +142,27 @@ result = estimate(
 print(result)
 # EstimationResult(mu_hat=0.9893, interval=[0.9612, 1.0000], samples=..., ...)
 ```
+
+## Quickstart — distribution-aware property-based testing
+
+Pair DiSE with Hypothesis strategies to certify failure rates of a
+property-based test under operational input distributions:
+
+```python
+import hypothesis.strategies as st
+from dise.integrations.hypothesis import estimate_from_strategies
+
+result = estimate_from_strategies(
+    strategies={"a": st.integers(min_value=1, max_value=31),
+                "b": st.integers(min_value=1, max_value=31)},
+    property_fn=lambda a, b: a * b < (1 << 8),     # 8-bit overflow check
+    epsilon=0.05, delta=0.05,
+)
+print(result.mu_hat, result.interval)
+```
+
+See [`docs/hypothesis-integration.md`](docs/hypothesis-integration.md)
+for the rationale and the strategy ↔ symbolic-region research direction.
 
 ## Quickstart — assertion-violation framing
 
@@ -169,6 +223,7 @@ QUICK=1 scripts/reproduce.sh          # fast smoke
 | [`docs/architecture.md`](docs/architecture.md) | Module diagram, key data types, invariants, file layout.                                    |
 | [`docs/evaluation.md`](docs/evaluation.md)     | Experimental methodology: comparators, benchmarks, metrics, soundness verification.         |
 | [`docs/related-work.md`](docs/related-work.md) | Bibliography and positioning vs. PSE, probabilistic model checkers, sampling-based MC.     |
+| [`docs/hypothesis-integration.md`](docs/hypothesis-integration.md) | DiSE × Hypothesis: distribution-aware property-based testing.                          |
 | [`docs/limitations.md`](docs/limitations.md)   | What DiSE does *not* support; open extensions ranked by impact.                             |
 | [`INSTALL.md`](INSTALL.md)                     | Install via `uv`, `pip`, or Docker.                                                         |
 | [`EXPERIMENTS.md`](EXPERIMENTS.md)             | Exact reproduction commands for every paper table and figure.                                |

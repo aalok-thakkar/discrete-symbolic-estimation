@@ -110,23 +110,71 @@ def empirical_bernstein_halfwidth_mp(
 
 
 def wilson_halfwidth_for_leaf(n: int, h: int, delta: float) -> float:
-    """Wilson-style half-width for a single Bernoulli leaf.
+    """Wilson-score half-width for a single Bernoulli leaf at fixed ``n``.
 
-    Uses the Wilson-score-with-continuity-correction style formula. For
-    ``h == 0`` or ``h == n`` returns a non-zero half-width (no collapse).
+    Valid only at a *fixed* (non-data-dependent) sample size ``n``.
+    For data-adaptive ``n`` use :func:`wilson_halfwidth_anytime`.
+
+    For ``h == 0`` or ``h == n`` returns a non-zero half-width (no
+    Bernoulli collapse).
     """
     if delta <= 0.0 or delta >= 1.0:
         raise ValueError("delta must be in (0, 1)")
     if n == 0:
         return 1.0
-    # Normal-approximation z for two-sided 1 - delta:
-    # Use the inverse Phi(1 - delta/2). scipy is overkill; use a small
-    # approximation good for typical delta values.
     z = _phi_inv_one_sided(1.0 - delta / 2.0)
     p = h / n
     denom = 1.0 + z * z / n
     half = z * math.sqrt(p * (1.0 - p) / n + z * z / (4.0 * n * n)) / denom
-    return max(half, 1.0 / (n + 2))  # never collapse to 0
+    return max(half, 1.0 / (n + 2))
+
+
+def wilson_halfwidth_anytime(n: int, h: int, delta: float) -> float:
+    r"""Time-uniform Wilson-score half-width.
+
+    For an iid Bernoulli stream :math:`X_1, X_2, \ldots` with mean
+    :math:`\mu` and empirical mean :math:`\bar X_n = h/n`, returns a
+    bound such that
+
+    .. math::
+
+        \Pr\!\big[\,\exists n \ge 1 : |\bar X_n - \mu| > h_n\,\big] \;\le\; \delta.
+
+    Construction: apply the fixed-``n`` Wilson interval at the
+    Bonferroni-in-time confidence
+    :math:`\delta_n = 6\,\delta / (\pi^2 n^2)`. Since
+    :math:`\sum_{n=1}^\infty 6 / (\pi^2 n^2) = 1` (Basel), the union
+    bound
+
+    .. math::
+
+        \Pr\!\bigg[\,\bigcup_{n=1}^\infty \{|\bar X_n - \mu| > h_n\}\bigg]
+        \;\le\; \sum_{n=1}^\infty \delta_n \;=\; \delta
+
+    yields anytime validity — valid at every (data-dependent) stopping
+    time on the sample-count axis. The half-width is slightly larger
+    than the fixed-``n`` Wilson bound by roughly a
+    :math:`\sqrt{\log n}` factor.
+
+    This is the bound to use when sample sizes are chosen adaptively or
+    the algorithm uses an optional-stopping rule on the observed
+    interval — both true of ASIP.
+
+    References
+    ----------
+    Howard, Ramdas, McAuliffe, Sekhon (2021), "Time-uniform Chernoff
+    bounds via nonnegative supermartingales", Probab. Surv.;
+    Robbins (1970), "Statistical methods related to the law of the
+    iterated logarithm".
+    """
+    if delta <= 0.0 or delta >= 1.0:
+        raise ValueError("delta must be in (0, 1)")
+    if n <= 0:
+        return 1.0
+    # 6 / pi^2 normalizing constant from the Basel identity.
+    delta_n = 6.0 * delta / (math.pi * math.pi * n * n)
+    delta_n = min(delta_n, 0.999)  # numerical guard
+    return wilson_halfwidth_for_leaf(n, h, delta_n)
 
 
 def _phi_inv_one_sided(p: float) -> float:
@@ -189,15 +237,23 @@ def _phi_inv_one_sided(p: float) -> float:
 def compute_estimator_state(
     frontier: Frontier,
     delta: float,
-    method: Literal["bernstein", "wilson", "empirical-bernstein"] = "wilson",
+    method: Literal["bernstein", "wilson", "empirical-bernstein", "anytime"] = "wilson",
 ) -> EstimatorState:
     """Compute the certified estimator state from the current frontier.
 
     Methods:
 
     * ``"wilson"`` (default) — sum of per-open-leaf Wilson half-widths
-      with Bonferroni correction. Tight for Bernoulli leaves; the
-      practical default and the one used in the paper's main tables.
+      with Bonferroni correction. Tight for Bernoulli leaves at *fixed*
+      sample counts. **Use this if your stopping rule is non-adaptive**
+      (e.g. a fixed budget reached on every run).
+    * ``"anytime"`` — sum of per-open-leaf *time-uniform* Wilson half-
+      widths (Howard-Ramdas-McAuliffe-style; see
+      :func:`wilson_halfwidth_anytime`). Valid under data-dependent
+      stopping (e.g. ``epsilon_reached``) and adaptive per-leaf sample
+      sizes. Slightly looser than ``"wilson"`` (by a
+      :math:`\\sqrt{\\log n}` factor). **Use this for ATVA-style
+      soundness claims under ASIP's adaptive schedule.**
     * ``"bernstein"`` — classical Bernstein bound on the total estimator
       variance. Conservative; soundness-only.
     * ``"empirical-bernstein"`` — Maurer-Pontil empirical-Bernstein
@@ -246,12 +302,23 @@ def compute_estimator_state(
                 v_hat, n, delta_per_leaf, range_bound=1.0
             )
     elif method == "wilson":
-        # Bonferroni: each open leaf gets delta / max(1, K).
+        # Bonferroni over leaves; fixed-n Wilson per leaf.
         K = max(len(open_leaves), 1)
         delta_per_leaf = delta / K
         eps_stat = sum(
             leaf.w_hat
             * wilson_halfwidth_for_leaf(leaf.n_samples, leaf.n_hits, delta_per_leaf)
+            for leaf in open_leaves
+        )
+    elif method == "anytime":
+        # Bonferroni over leaves; anytime-valid Wilson per leaf.
+        # Sound under data-dependent stopping and adaptive sample sizes
+        # — the recommended setting for ASIP's adaptive schedule.
+        K = max(len(open_leaves), 1)
+        delta_per_leaf = delta / K
+        eps_stat = sum(
+            leaf.w_hat
+            * wilson_halfwidth_anytime(leaf.n_samples, leaf.n_hits, delta_per_leaf)
             for leaf in open_leaves
         )
     else:
@@ -283,5 +350,6 @@ __all__ = [
     "bernstein_halfwidth",
     "compute_estimator_state",
     "empirical_bernstein_halfwidth_mp",
+    "wilson_halfwidth_anytime",
     "wilson_halfwidth_for_leaf",
 ]
