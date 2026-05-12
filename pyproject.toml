@@ -1,0 +1,59 @@
+[project]
+name = "discrete-symbolic-estimation"
+version = "0.1.0"
+description = "DiSE: distribution-aware reliability estimation for deterministic integer/bitvector programs."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "aalok-thakkar", email = "aalok1996@gmail.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "z3-solver>=4.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "mypy>=1.5",
+    "ruff>=0.1",
+    "hypothesis>=6.80",
+]
+plot = [
+    "matplotlib>=3.7",
+]
+
+[project.scripts]
+dise = "dise.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.13,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+package = true
+
+[tool.uv.build-backend]
+module-name = "dise"
+module-root = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = false
+warn_unused_ignores = true
+ignore_missing_imports = true

@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+title: "DiSE: Discrete Symbolic Estimation"
+message: >-
+  If you use this software in academic work, please cite it as below.
+type: software
+authors:
+  - family-names: "Thakkar"
+    given-names: "Aalok"
+abstract: >-
+  DiSE is a research prototype implementing distribution-aware
+  reliability estimation for deterministic integer / bitvector
+  programs. Given a program P, a discrete operational distribution D,
+  a Boolean property phi, and a sample budget, DiSE returns an
+  estimate of Pr_{D}[phi(P(x))=1] together with a certified two-sided
+  half-width.
+repository-code: "https://github.com/aalok-thakkar/discrete-symbolic-estimation"
+license: MIT
+version: "0.1.0"
+date-released: 2026-05-12
+keywords:
+  - reliability estimation
+  - importance partitioning
+  - symbolic execution
+  - SMT
+  - Monte Carlo
+preferred-citation:
+  type: conference-paper
+  title: "Adaptive Symbolic Importance Partitioning for Discrete Reliability Estimation"
+  authors:
+    - family-names: "Thakkar"
+      given-names: "Aalok"
+  year: 2026
