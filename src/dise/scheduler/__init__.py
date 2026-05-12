@@ -15,6 +15,7 @@ Termination is reached when:
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -35,9 +36,39 @@ from ..smt import SMTBackend, SMTExpr
 
 @dataclass
 class SchedulerConfig:
+    """Configuration for :class:`ASIPScheduler`.
+
+    Termination is governed by four orthogonal knobs. The algorithm
+    halts at the **first** condition that fires:
+
+    * ``epsilon`` (always active) — stop when
+      :math:`\\varepsilon_{\\text{stat}} + W_{\\text{open}} \\le \\varepsilon`.
+    * ``budget_samples`` — optional cap on concolic runs.
+      ``None`` disables the cap (recommended for soundness-mode runs;
+      see :class:`SchedulerResult.terminated_reason`).
+    * ``budget_seconds`` — optional wall-clock cap. ``None`` disables.
+    * ``min_gain_per_cost`` — diminishing-returns floor; the algorithm
+      declares ``"no_actions_available"`` when the best candidate
+      action's expected gain-per-cost falls below this threshold.
+
+    Setting *all* of ``budget_samples``, ``budget_seconds``, and
+    ``min_gain_per_cost`` to permissive values yields a "soundness-
+    only" run: the algorithm runs until ``epsilon_reached``. For
+    pathologically hard targets this may not terminate; configure at
+    least one cap unless you trust the target is reachable.
+    """
+
     epsilon: float = 0.05
     delta: float = 0.05
-    budget_samples: int = 10_000
+    # ``None`` disables the cap; the algorithm runs until the target
+    # ``epsilon`` is reached or another cap fires.
+    budget_samples: int | None = 10_000
+    # ``None`` disables the wall-clock cap.
+    budget_seconds: float | None = None
+    # The algorithm stops when the best action's expected
+    # gain-per-cost falls below this threshold. Default 0 keeps
+    # backward-compatible behavior.
+    min_gain_per_cost: float = 0.0
     bootstrap_samples: int = 200
     batch_size: int = 50
     refinement_cost_in_samples: float = 1.0
@@ -135,6 +166,8 @@ class ASIPScheduler:
         self.smt_calls = 0
         self.iterations: list[IterationLog] = []
         self.terminated_reason = "not_terminated"
+        # Wall-clock timer, set at `run` time.
+        self._start_time: float | None = None
         # Per-leaf raw path conditions and phi values (used to choose
         # refinement clauses). Scheduler-local; not part of Frontier state.
         self._leaf_paths: dict[int, list[list[BranchRecord]]] = {}
@@ -172,23 +205,39 @@ class ASIPScheduler:
         self._leaf_paths.setdefault(key, []).append(list(result.path_condition))
         self._leaf_path_phis.setdefault(key, []).append(int(result.phi_value))
 
+    def _budget_remaining(self) -> int | None:
+        """Concolic-run budget left before the sample cap fires, or
+        ``None`` if no sample cap is configured."""
+        if self.config.budget_samples is None:
+            return None
+        return self.config.budget_samples - self.samples_used
+
+    def _time_exhausted(self) -> bool:
+        if self.config.budget_seconds is None or self._start_time is None:
+            return False
+        return (time.perf_counter() - self._start_time) >= self.config.budget_seconds
+
     def _allocate_one_batch(self, leaf: FrontierNode, k: int) -> int:
         """Draw ``k`` samples from ``leaf.region``, run concolic on each,
         record observations. Returns the number of concolic runs actually
-        performed (may be < k if sampling failed).
+        performed (may be < k if the sample cap or time cap fires).
         """
         if leaf.status != Status.OPEN:
             return 0
-        remaining_budget = self.config.budget_samples - self.samples_used
-        if remaining_budget <= 0:
-            return 0
-        k = min(k, remaining_budget)
+        remaining = self._budget_remaining()
+        if remaining is not None:
+            if remaining <= 0:
+                return 0
+            k = min(k, remaining)
         batch = self.sampler.sample(
             leaf.region, self.distribution, self.smt, self.rng, k
         )
         n_run = 0
         for x in batch.iter_assignments():
-            if self.samples_used >= self.config.budget_samples:
+            remaining = self._budget_remaining()
+            if remaining is not None and remaining <= 0:
+                break
+            if self._time_exhausted():
                 break
             result = self._run_concolic(x)
             self.samples_used += 1
@@ -406,7 +455,7 @@ class ASIPScheduler:
             return (a.gain_per_cost, 1 if a.kind == "refine" else 0)
         actions.sort(key=key, reverse=True)
         best = actions[0]
-        if best.gain_per_cost <= 0.0:
+        if best.gain_per_cost <= self.config.min_gain_per_cost:
             return None
         return best
 
@@ -417,13 +466,21 @@ class ASIPScheduler:
     def bootstrap(self) -> None:
         """Initial sampling pass: draw ``bootstrap_samples`` from ``D``
         and attribute each to the root."""
-        n = min(self.config.bootstrap_samples, self.config.budget_samples)
+        n = self.config.bootstrap_samples
+        if self.config.budget_samples is not None:
+            n = min(n, self.config.budget_samples)
         self._allocate_one_batch(self.frontier.root, n)
 
     def _should_terminate(self) -> tuple[bool, EstimatorState]:
         state = compute_estimator_state(self.frontier, self.config.delta)
-        if self.samples_used >= self.config.budget_samples:
+        if (
+            self.config.budget_samples is not None
+            and self.samples_used >= self.config.budget_samples
+        ):
             self.terminated_reason = "budget_exhausted"
+            return True, state
+        if self._time_exhausted():
+            self.terminated_reason = "time_exhausted"
             return True, state
         if state.eps_stat + state.W_open <= self.config.epsilon:
             self.terminated_reason = "epsilon_reached"
@@ -449,11 +506,21 @@ class ASIPScheduler:
         )
 
     def run(self) -> SchedulerResult:
+        self._start_time = time.perf_counter()
         self.bootstrap()
         self._try_close_all()
 
+        # Safety upper bound on iterations. We use:
+        #   - the sample budget (each iteration spends at least 1 sample
+        #     in the allocate branch), plus
+        #   - a generous slack for refinement-only iterations, plus
+        #   - a fallback of 10^7 when there is no sample budget.
+        if self.config.budget_samples is not None:
+            max_iters = self.config.budget_samples + 1000
+        else:
+            max_iters = 10_000_000
+
         iter_idx = 0
-        max_iters = self.config.budget_samples + 1000  # safety bound
         for iter_idx in range(max_iters):
             done, state = self._should_terminate()
             if done:

@@ -1,4 +1,12 @@
-"""User-facing :func:`estimate` entry point and :class:`EstimationResult`."""
+"""User-facing entry points and result type.
+
+* :func:`estimate` — the general entry point. Takes a Boolean property
+  on the program's output.
+* :func:`failure_probability` — convenience wrapper for the classical
+  *assertion-violation* framing: estimate
+  :math:`\\Pr_D[P(x) \\text{ raises AssertionError}]` (or any
+  user-specified exception class).
+"""
 
 from __future__ import annotations
 
@@ -57,7 +65,9 @@ def estimate(
     property_fn: Callable[[Any], bool],
     epsilon: float = 0.05,
     delta: float = 0.05,
-    budget: int = 10_000,
+    budget: int | None = 10_000,
+    budget_seconds: float | None = None,
+    min_gain_per_cost: float = 0.0,
     bootstrap: int = 200,
     batch_size: int = 50,
     seed: int = 0,
@@ -67,24 +77,40 @@ def estimate(
     closure_min_samples: int = 5,
     max_concolic_branches: int = 10_000,
 ) -> EstimationResult:
-    """Run DiSE on ``program`` against ``property_fn`` under ``distribution``.
+    r"""Run DiSE on ``program`` against ``property_fn`` under ``distribution``.
+
+    Estimate :math:`\mu = \Pr_D[\varphi(P(x)) = 1]` and return a
+    certified two-sided interval that contains :math:`\mu` with
+    probability at least :math:`1 - \delta` (modulo the soundness of
+    the SMT backend; see :doc:`docs/algorithm`).
 
     Parameters
     ----------
     program:
-        A callable taking the variables in ``distribution`` as kwargs and
+        Callable taking the variables in ``distribution`` as kwargs and
         returning an int (or a tuple / structure containing ints).
     distribution:
         Map from variable name to a :class:`~dise.distributions.Distribution`.
     property_fn:
         Boolean property of the program's output.
     epsilon:
-        Target half-width on the certified interval.
+        Target half-width on the certified interval (always active —
+        the *primary* termination condition).
     delta:
-        Confidence parameter — interval holds with probability at least
-        ``1 - delta``.
+        Confidence parameter — interval covers truth with probability
+        at least ``1 - delta``.
     budget:
-        Maximum number of concolic samples to run.
+        Optional cap on concolic runs. ``None`` disables the cap and
+        relies on ``epsilon`` (and the gain-per-cost floor) for
+        termination. Default ``10_000`` is conservative; for
+        soundness-mode runs pass ``budget=None``.
+    budget_seconds:
+        Optional wall-clock cap in seconds. ``None`` disables.
+    min_gain_per_cost:
+        Threshold below which the algorithm declares no positive-gain
+        action exists (diminishing-returns floor). Default ``0``
+        preserves the brief's strict semantics; e.g. ``1e-9`` makes
+        unbounded runs terminate as soon as further work is wasted.
     bootstrap:
         Number of initial samples drawn from ``D`` before adaptive
         action selection begins.
@@ -97,11 +123,22 @@ def estimate(
         (Z3 if installed, else Mock).
     verbose:
         Pass-through to the scheduler for diagnostic prints (currently a no-op).
+    max_refinement_depth:
+        Maximum depth in the frontier tree (caps refinement recursion).
+    closure_min_samples:
+        Minimum samples at a leaf before sample-based closure can fire.
+    max_concolic_branches:
+        Per-run cap on the number of branches the concolic tracer records.
 
     Returns
     -------
     EstimationResult
         Includes ``mu_hat``, the certified ``interval``, and diagnostics.
+
+    See Also
+    --------
+    failure_probability : convenience wrapper for assertion-violation
+        properties.
     """
     if backend is None:
         backend = default_backend()
@@ -111,6 +148,8 @@ def estimate(
         epsilon=epsilon,
         delta=delta,
         budget_samples=budget,
+        budget_seconds=budget_seconds,
+        min_gain_per_cost=min_gain_per_cost,
         bootstrap_samples=bootstrap,
         batch_size=batch_size,
         max_refinement_depth=max_refinement_depth,
@@ -144,4 +183,86 @@ def estimate(
     )
 
 
-__all__ = ["EstimationResult", "estimate"]
+def failure_probability(
+    program: Callable[..., Any],
+    distribution: Mapping[str, Distribution],
+    *,
+    catch: type[BaseException] | tuple[type[BaseException], ...] = AssertionError,
+    epsilon: float = 0.05,
+    delta: float = 0.05,
+    budget: int | None = None,
+    budget_seconds: float | None = None,
+    min_gain_per_cost: float = 0.0,
+    bootstrap: int = 200,
+    batch_size: int = 50,
+    seed: int = 0,
+    backend: SMTBackend | None = None,
+    verbose: bool = False,
+    max_refinement_depth: int = 50,
+    closure_min_samples: int = 5,
+    max_concolic_branches: int = 10_000,
+) -> EstimationResult:
+    r"""Estimate :math:`\Pr_D[P \text{ raises an exception of type } \texttt{catch}]`.
+
+    The classical assertion-violation framing of probabilistic program
+    verification: given a program with assertions (or any guarded
+    operations that raise a specific exception class), compute the
+    *failure probability* under an operational distribution ``D``.
+
+    Internally wraps ``program`` so that exceptions of the specified
+    type become Boolean failures (``output == 1``) and delegates to
+    :func:`estimate`. The default ``catch=AssertionError`` covers the
+    canonical ``assert`` use case; pass a tuple of exception classes
+    (e.g. ``(AssertionError, ValueError)``) to broaden the failure
+    semantics. Exceptions outside ``catch`` are *not* caught — they
+    propagate, indicating a real bug in the harness.
+
+    Note that the default ``budget=None`` is *unlimited*: the algorithm
+    runs until ``epsilon_reached`` (configurable via ``epsilon``) or
+    ``no_actions_available`` fires. Pass an explicit ``budget`` for
+    bounded-time runs.
+
+    Examples
+    --------
+
+    >>> from dise import failure_probability, Uniform
+    >>> def safe_mul(a, b):
+    ...     s = a * b
+    ...     assert s < (1 << 8), "overflow"
+    ...     return s
+    >>> result = failure_probability(
+    ...     program=safe_mul,
+    ...     distribution={"a": Uniform(1, 31), "b": Uniform(1, 31)},
+    ...     epsilon=0.05,
+    ... )                                                # doctest: +SKIP
+    >>> print(result)                                    # doctest: +SKIP
+    """
+
+    def wrapped(**kw: int) -> int:
+        try:
+            program(**kw)
+            return 0  # success: no assertion violated
+        except catch:
+            return 1  # failure
+
+    return estimate(
+        program=wrapped,
+        distribution=distribution,
+        property_fn=lambda v: v == 1,
+        epsilon=epsilon,
+        delta=delta,
+        budget=budget,
+        budget_seconds=budget_seconds,
+        min_gain_per_cost=min_gain_per_cost,
+        bootstrap=bootstrap,
+        batch_size=batch_size,
+        seed=seed,
+        backend=backend,
+        verbose=verbose,
+        max_refinement_depth=max_refinement_depth,
+        closure_min_samples=closure_min_samples,
+        max_concolic_branches=max_concolic_branches,
+    )
+
+
+__all__ = ["EstimationResult", "estimate", "failure_probability"]

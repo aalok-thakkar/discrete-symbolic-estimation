@@ -48,7 +48,7 @@ from .distributions import (
     ProductDistribution,
     Uniform,
 )
-from .estimator.api import EstimationResult, estimate
+from .estimator.api import EstimationResult, estimate, failure_probability
 from .smt import (
     CachedBackend,
     CacheStats,
@@ -61,8 +61,9 @@ from .smt import (
 
 __all__ = [
     "__version__",
-    # estimation entry point
+    # estimation entry points
     "estimate",
+    "failure_probability",
     "EstimationResult",
     # distributions
     "Distribution",

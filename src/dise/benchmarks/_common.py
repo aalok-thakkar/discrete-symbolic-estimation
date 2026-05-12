@@ -38,7 +38,29 @@ def common_argparser(description: str) -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=description)
     p.add_argument("--epsilon", type=float, default=0.05, help="target half-width")
     p.add_argument("--delta", type=float, default=0.05, help="confidence parameter")
-    p.add_argument("--budget", type=int, default=5000, help="max concolic samples")
+    p.add_argument(
+        "--budget",
+        type=int,
+        default=5000,
+        help="max concolic samples; pair with --no-budget to disable",
+    )
+    p.add_argument(
+        "--no-budget",
+        action="store_true",
+        help="disable the sample cap; rely on epsilon (and --budget-seconds, if any)",
+    )
+    p.add_argument(
+        "--budget-seconds",
+        type=float,
+        default=None,
+        help="optional wall-clock cap in seconds",
+    )
+    p.add_argument(
+        "--min-gain-per-cost",
+        type=float,
+        default=0.0,
+        help="diminishing-returns floor for action selection (default 0)",
+    )
     p.add_argument("--bootstrap", type=int, default=200, help="bootstrap samples")
     p.add_argument("--batch-size", type=int, default=50, help="samples per batch")
     p.add_argument("--seed", type=int, default=0, help="rng seed")
@@ -114,10 +136,15 @@ def run_and_print(bench: Benchmark, args: argparse.Namespace) -> EstimationResul
             f"CI95 ≈ [{ci_lo:.4f}, {ci_hi:.4f}]",
             file=sys.stderr,
         )
+    effective_budget: int | None = (
+        None if getattr(args, "no_budget", False) else args.budget
+    )
+    budget_seconds = getattr(args, "budget_seconds", None)
+    min_gain_per_cost = getattr(args, "min_gain_per_cost", 0.0)
     print(
         f"Running DiSE: epsilon={args.epsilon}, delta={args.delta}, "
-        f"budget={args.budget}, bootstrap={args.bootstrap}, "
-        f"batch_size={args.batch_size} ...",
+        f"budget={effective_budget!r}, budget_seconds={budget_seconds!r}, "
+        f"bootstrap={args.bootstrap}, batch_size={args.batch_size} ...",
         file=sys.stderr,
     )
     result = estimate(
@@ -126,7 +153,9 @@ def run_and_print(bench: Benchmark, args: argparse.Namespace) -> EstimationResul
         property_fn=bench.property_fn,
         epsilon=args.epsilon,
         delta=args.delta,
-        budget=args.budget,
+        budget=effective_budget,
+        budget_seconds=budget_seconds,
+        min_gain_per_cost=min_gain_per_cost,
         bootstrap=args.bootstrap,
         batch_size=args.batch_size,
         seed=args.seed,
@@ -148,7 +177,9 @@ def run_and_print(bench: Benchmark, args: argparse.Namespace) -> EstimationResul
             "args": {
                 "epsilon": args.epsilon,
                 "delta": args.delta,
-                "budget": args.budget,
+                "budget": effective_budget,
+                "budget_seconds": budget_seconds,
+                "min_gain_per_cost": min_gain_per_cost,
                 "bootstrap": args.bootstrap,
                 "batch_size": args.batch_size,
                 "seed": args.seed,

@@ -45,6 +45,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
         epsilon=args.epsilon,
         delta=args.delta,
         budget=args.budget,
+        no_budget=args.no_budget,
+        budget_seconds=args.budget_seconds,
+        min_gain_per_cost=args.min_gain_per_cost,
         bootstrap=args.bootstrap,
         batch_size=args.batch_size,
         seed=args.seed,
@@ -204,7 +207,14 @@ def make_parser() -> argparse.ArgumentParser:
     pr.add_argument("benchmark", type=str)
     pr.add_argument("--epsilon", type=float, default=0.05)
     pr.add_argument("--delta", type=float, default=0.05)
-    pr.add_argument("--budget", type=int, default=5000)
+    pr.add_argument("--budget", type=int, default=5000,
+                    help="max concolic samples; pair with --no-budget to disable")
+    pr.add_argument("--no-budget", action="store_true",
+                    help="disable the sample cap; rely on epsilon (and --budget-seconds, if any)")
+    pr.add_argument("--budget-seconds", type=float, default=None,
+                    help="optional wall-clock cap in seconds")
+    pr.add_argument("--min-gain-per-cost", type=float, default=0.0,
+                    help="diminishing-returns floor (default 0)")
     pr.add_argument("--bootstrap", type=int, default=200)
     pr.add_argument("--batch-size", type=int, default=50)
     pr.add_argument("--seed", type=int, default=0)

@@ -1,6 +1,6 @@
 # Evaluation methodology
 
-We evaluate DiSE against two baselines on a suite of ten integer
+We evaluate DiSE against two baselines on a suite of **eleven** integer
 benchmarks. This document spells out exactly how the experiments are
 constructed; the full reproduction commands are in
 [`EXPERIMENTS.md`](../EXPERIMENTS.md).
@@ -19,18 +19,21 @@ experiment runner can iterate uniformly.
 
 ## 2. Benchmarks
 
-| Name                              | Description                                                    | Key knob          |
-|-----------------------------------|----------------------------------------------------------------|-------------------|
-| `gcd_steps_le_5_BG(p=0.1,N=100)`  | Euclidean GCD step count ≤ 5; the brief's running example.    | `k` (threshold)   |
-| `modpow_fits_in_4b_m=37`          | Modular exponentiation result fits in `w` bits.                | `w`, `m`          |
-| `miller_rabin_w=2_BG(p=0.05,N=200)` | Miller-Rabin (witness 2) deems `n` probably-prime.            | `witness`, `N`    |
-| `popcount_w6`, `parity_w6`, `log2_w6` | Hacker's-Delight kernels; correctness property (`mu = 1`). | `w`               |
-| `collatz_le_30_BG(p=0.05,N=200)`  | Collatz trajectory length ≤ 30 (irregular control flow).       | `k`, `N`          |
-| `sieve_primality_U(2,200)`        | Trial-division primality.                                       | `N`               |
-| `integer_sqrt_correct_U(1,1023)`  | `isqrt(n)**2 <= n < (isqrt(n)+1)**2` (specification check).   | `N`               |
-| `sparse_trie_depth_le_3_U(0,63)`  | Max-depth of a 4-ary trie after two insertions.                | `N`, `k`          |
+| Name                                          | Framing             | Description                                                  | Key knob       |
+|-----------------------------------------------|---------------------|--------------------------------------------------------------|----------------|
+| `gcd_steps_le_5_BG(p=0.1,N=100)`              | output-property     | Euclidean GCD step count $\le k$. The brief's running example. | $k$            |
+| `modpow_fits_in_4b_m=37`                      | output-property     | Modular exponentiation fits in $w$ bits.                     | $w$, $m$       |
+| `miller_rabin_w=2_BG(p=0.05,N=200)`           | output-property     | Miller-Rabin (witness 2) accepts $n$.                        | witness, $N$   |
+| `popcount_w6`, `parity_w6`, `log2_w6`         | correctness         | Hacker's-Delight kernels; property always true ($\mu = 1$).  | $w$            |
+| `collatz_le_30_BG(p=0.05,N=200)`              | output-property     | Collatz trajectory $\le k$ (irregular control flow).         | $k$, $N$       |
+| `sieve_primality_U(2,200)`                    | output-property     | Trial-division primality.                                    | $N$            |
+| `integer_sqrt_correct_U(1,1023)`              | spec / assertion    | $\texttt{isqrt}(n)^2 \le n < (\texttt{isqrt}(n)+1)^2$.       | $N$            |
+| `sparse_trie_depth_le_3_U(0,63)`              | output-property     | Max-depth of a 4-ary trie after two insertions.              | $N$, $k$       |
+| **`assertion_overflow_mul_w=8_U(1,31)`**      | **assertion-violation** | **Integer-overflow on `a*b`; failure probability target.** | **$M$, $w$**   |
 
-Run `dise list` for the always-up-to-date roster.
+`dise list` is the always-up-to-date roster. The assertion-violation
+benchmark exercises the canonical formal-verification framing — see
+[`assertion_overflow.py`](../src/dise/benchmarks/assertion_overflow.py).
 
 ## 3. Metrics
 
@@ -45,7 +48,7 @@ the experiment runner records:
 * **`interval_contains_truth`** — whether the MC ground truth lies in
   the certified interval. Aggregated across seeds, this is the
   empirical *coverage*; for sound methods at confidence $1 - \delta$
-  we expect it to be $\ge 1 - \delta$.
+  we expect $\text{coverage} \ge 1 - \delta$.
 
 Aggregated per `(method, benchmark)`:
 
@@ -83,13 +86,18 @@ region with weight $\approx 1$ (e.g. `gcd_steps_le_10_*`,
 paths (e.g. `popcount_w6` under uniform), the benefit narrows because
 each leaf demands its own constrained-sample budget.
 
+For the assertion-violation benchmark, the comparison is over the
+**failure probability** estimate: DiSE certifies a tight interval on
+$\mu_{\text{fail}}$ where plain MC needs $\Theta(1/\varepsilon^2)$
+samples for the same half-width.
+
 ## 6. Soundness verification
 
-For every method × seed, we record
-``interval_contains_truth``. Over $n$ seeds × $b$ benchmarks, the
-empirical coverage rate should be $\ge 1 - \delta$ asymptotically. A
-single seed × benchmark giving the wrong answer is *expected*
-($\delta = 0.05$); the aggregate column shows the rate.
+For every method × seed, we record `interval_contains_truth`. Over $n$
+seeds × $b$ benchmarks, the empirical coverage rate should be
+$\ge 1 - \delta$ asymptotically. A single seed × benchmark giving the
+wrong answer is *expected* (at $\delta = 0.05$ we anticipate ~5 % miss
+rate); the aggregate column shows the rate.
 
 When DiSE's coverage rate falls below the target, the most likely
 explanations (in decreasing order of probability) are:
@@ -114,3 +122,15 @@ Two routes:
 All seeds are derived from a single `--seed` flag; the experiment
 runner enumerates `range(n_seeds)`. Wall-clock measurements are
 machine-dependent and reported here for indication only.
+
+### 7.1 Soundness-mode runs
+
+For tight $\varepsilon$ targets, pass `--no-budget` (the algorithm
+runs until `epsilon_reached` with no sample cap). Combined with
+`--budget-seconds 600` (10 minute wall-clock cap) you get a
+"converge as far as you can in 10 minutes" semantics:
+
+```bash
+dise run gcd_steps_le_5_BG\(p=0.1,N=100\) \
+    --no-budget --budget-seconds 600 --epsilon 0.001
+```

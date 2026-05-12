@@ -20,6 +20,7 @@ from __future__ import annotations
 
 # Importing each module triggers @register side effects.
 from . import (  # noqa: F401  (side-effect imports)
+    assertion_overflow,
     bitvector_kernels,
     collatz,
     gcd_geometric,
