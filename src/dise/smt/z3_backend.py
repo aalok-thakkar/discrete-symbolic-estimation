@@ -244,19 +244,20 @@ class Z3Backend(SMTBackend):
         return frozenset(seen)
 
     def evaluate(self, formula: Any, assignment: dict[str, int]) -> bool:
+        # Note: the error message is intentionally static. When the
+        # formula contains arithmetic that Z3's simplifier cannot reduce
+        # to a Boolean (typically ``mod`` / ``div`` by zero from a path
+        # condition whose loop terminated earlier than the recorded
+        # path), this exception is hit on the hot mass-split path —
+        # constructing an f-string with ``{result}`` here was ~140 ms /
+        # call due to Z3's Python pretty-printer walking the expression.
         subs = [(self.make_int_var(name), z3.IntVal(int(val))) for name, val in assignment.items()]
-        if not subs:
-            result = z3.simplify(formula)
-        else:
-            result = z3.simplify(z3.substitute(formula, *subs))
+        result = z3.simplify(formula if not subs else z3.substitute(formula, *subs))
         if z3.is_true(result):
             return True
         if z3.is_false(result):
             return False
-        raise ValueError(
-            f"could not evaluate formula to a Boolean constant; "
-            f"unresolved expression: {result}"
-        )
+        raise ValueError("evaluate: formula did not reduce to a Boolean constant")
 
     def repr_expr(self, expr: Any) -> str:
         return str(expr)

@@ -21,6 +21,8 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
+import numpy as np
+
 from ..regions import Frontier, Status
 
 
@@ -128,6 +130,68 @@ def wilson_halfwidth_for_leaf(n: int, h: int, delta: float) -> float:
     p = h / n
     denom = 1.0 + z * z / n
     half = z * math.sqrt(p * (1.0 - p) / n + z * z / (4.0 * n * n)) / denom
+    return max(half, 1.0 / (n + 2))
+
+
+def betting_halfwidth_anytime(
+    n: int,
+    h: int,
+    delta: float,
+    *,
+    grid_size: int = 512,
+    lambdas: tuple[float, ...] = (0.1, 0.3, 0.5, 0.7, 0.9),
+) -> float:
+    r"""Hedged-capital betting CS half-width for a Bernoulli leaf.
+
+    Anytime-valid bound on the per-leaf disagreement rate, tighter than
+    :func:`wilson_halfwidth_anytime` by a constant factor for moderate
+    :math:`n` and :math:`\\bar X_n \\in (0.05, 0.95)`. Construction: a
+    fixed-design hedged-capital betting confidence sequence (Waudby-
+    Smith & Ramdas 2024, §3) with a small :math:`\\lambda`-grid and a
+    Bonferroni-corrected per-:math:`\\lambda` test. For each candidate
+    mean :math:`m`, every betting fraction either confirms membership
+    of :math:`m` or excludes it; the :math:`(1-\\delta)`-CS is the
+    intersection of non-exclusions.
+
+    Returns the symmetric half-width
+    :math:`\\max(\\bar X_n - \\inf \\mathcal C_n,\\ \\sup \\mathcal C_n -
+    \\bar X_n)`. The empirical mean is always inside the CS by
+    construction.
+
+    Reference: Waudby-Smith & Ramdas, *Estimating means of bounded
+    random variables by betting*, JRSS-B 2024.
+    """
+    if not (0.0 < delta < 1.0):
+        raise ValueError("delta must be in (0, 1)")
+    if n <= 0:
+        return 1.0
+    if h < 0 or h > n:
+        raise ValueError(f"h={h!r} not in [0, n={n!r}]")
+    if grid_size < 8:
+        raise ValueError("grid_size must be >= 8")
+    n_lam = len(lambdas)
+    delta_per = delta / (2.0 * n_lam)
+    log_thresh = math.log(1.0 / delta_per)
+    m_grid = np.linspace(1e-6, 1.0 - 1e-6, grid_size)
+    eps = 1e-12
+    in_cs = np.ones(grid_size, dtype=bool)
+    for lam in lambdas:
+        lam_plus = np.minimum(lam, 1.0 / (m_grid + eps))
+        factor_h_plus = 1.0 + lam_plus * (1.0 - m_grid)
+        factor_nh_plus = np.maximum(1.0 - lam_plus * m_grid, eps)
+        log_K_plus = h * np.log(factor_h_plus) + (n - h) * np.log(factor_nh_plus)
+        lam_minus = np.minimum(lam, 1.0 / (1.0 - m_grid + eps))
+        factor_h_minus = np.maximum(1.0 - lam_minus * (1.0 - m_grid), eps)
+        factor_nh_minus = 1.0 + lam_minus * m_grid
+        log_K_minus = h * np.log(factor_h_minus) + (n - h) * np.log(factor_nh_minus)
+        in_cs &= (log_K_plus < log_thresh) & (log_K_minus < log_thresh)
+    if not in_cs.any():
+        return 1.0
+    idx = np.nonzero(in_cs)[0]
+    lo = float(m_grid[idx[0]])
+    hi = float(m_grid[idx[-1]])
+    mu_hat = h / n
+    half = max(mu_hat - lo, hi - mu_hat)
     return max(half, 1.0 / (n + 2))
 
 
@@ -321,16 +385,23 @@ def compute_estimator_state(
             for leaf in open_leaves
         )
     elif method == "anytime":
-        # Bonferroni over leaves; anytime-valid Wilson per leaf.
-        # Sound under data-dependent stopping and adaptive sample sizes
-        # — the recommended setting for ASIP's adaptive schedule.
+        # Bonferroni over leaves; per-leaf bound is min(Wilson-anytime,
+        # betting CS), each evaluated at ``delta_per_leaf / 2`` so the
+        # union of their failure events is bounded by delta_per_leaf.
+        # The Wilson-anytime bound is tighter on extreme leaves
+        # (h = 0 or h = n via the smoothing trick); the betting CS is
+        # tighter in the interior of [0, 1] (where Bernoulli variance
+        # is large and Wilson's union-bound-in-time penalty bites).
+        # The min recovers the best of both.
         K = max(len(open_leaves), 1)
         delta_per_leaf = delta / K
-        eps_stat = sum(
-            leaf.w_hat
-            * wilson_halfwidth_anytime(leaf.n_samples, leaf.n_hits, delta_per_leaf)
-            for leaf in open_leaves
-        )
+        delta_inner = delta_per_leaf / 2.0
+        eps_stat = 0.0
+        for leaf in open_leaves:
+            n_l, h_l = leaf.n_samples, leaf.n_hits
+            h_w = wilson_halfwidth_anytime(n_l, h_l, delta_inner)
+            h_b = betting_halfwidth_anytime(n_l, h_l, delta_inner)
+            eps_stat += leaf.w_hat * min(h_w, h_b)
     else:
         raise ValueError(f"unknown method: {method!r}")
 
@@ -341,8 +412,19 @@ def compute_estimator_state(
     # contribute `closure_epsilon * w_leaf` each into this budget; SMT-
     # verified closures contribute 0. See :meth:`dise.regions.Frontier.try_close`.
     W_close = getattr(frontier, "W_close_accumulated", 0.0)
-    lo = max(0.0, mu_hat - eps_stat - W_open - W_close)
-    hi = min(1.0, mu_hat + eps_stat + W_open + W_close)
+    # Mass-attribution uncertainty for open leaves. The deterministic
+    # decomposition |mu - mu_hat| ≤ |w_pi - hat_w_pi| * mu_pi +
+    # hat_w_pi * |mu_pi - hat_mu_pi| (Theorem 2 of docs/algorithm.md)
+    # bounds the second term via Wilson per leaf (already captured in
+    # eps_stat) and the first term via |w_pi - hat_w_pi|. For
+    # axis-aligned regions hat_w_pi = w_pi (exact mass), so the mass
+    # term is 0. For general regions we use a per-leaf 95% Wilson upper
+    # bound on the proportion via sqrt(w_var); summed gives ``eps_mass``.
+    # We use ``z = 2.0`` as a uniform multiplier (≈ 1-δ at δ ≈ 0.05).
+    z_mass = 2.0
+    eps_mass_certified = z_mass * eps_mass
+    lo = max(0.0, mu_hat - eps_stat - eps_mass_certified - W_close)
+    hi = min(1.0, mu_hat + eps_stat + eps_mass_certified + W_close)
 
     return EstimatorState(
         mu_hat=mu_hat,
@@ -363,6 +445,7 @@ def compute_estimator_state(
 __all__ = [
     "EstimatorState",
     "bernstein_halfwidth",
+    "betting_halfwidth_anytime",
     "compute_estimator_state",
     "empirical_bernstein_halfwidth_mp",
     "wilson_halfwidth_anytime",

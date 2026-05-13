@@ -78,6 +78,7 @@ def estimate(
     closure_min_samples: int = 5,
     delta_close: float = 0.005,
     closure_epsilon: float = 0.02,
+    n_mass_samples: int = 1000,
     max_concolic_branches: int = 10_000,
 ) -> EstimationResult:
     r"""Run DiSE on ``program`` against ``property_fn`` under ``distribution``.
@@ -178,6 +179,7 @@ def estimate(
         closure_min_samples=closure_min_samples,
         delta_close=delta_close,
         closure_epsilon=closure_epsilon,
+        n_mass_samples=n_mass_samples,
         max_concolic_branches=max_concolic_branches,
         verbose=verbose,
     )

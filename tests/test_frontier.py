@@ -213,15 +213,27 @@ def test_try_close_fails_on_disagreement(backend, small_uniform_dist) -> None:
     assert f.root.status == Status.OPEN
 
 
-def test_try_close_fails_on_different_sequences(backend, small_uniform_dist) -> None:
-    """All phi agree, but branch sequences differ — closure must NOT fire."""
+def test_try_close_succeeds_on_different_sequences_via_concentration(
+    backend, small_uniform_dist
+) -> None:
+    """All phi agree, branch sequences differ — closure *can* fire via the
+    sample-based concentration path even though the SMT shortcut (which
+    requires path determinism) is not eligible.
+
+    Under the previous all-paths-must-agree rule, the SMT shortcut was
+    the only closure path, so divergent paths blocked closure. With the
+    sound concentration-bounded closure rule, phi agreement plus
+    enough samples is sufficient — the leaf is bounded as a Bernoulli
+    on its observations regardless of internal path structure.
+    """
     f = Frontier(small_uniform_dist, backend)
     for _ in range(3):
         f.add_observation(f.root, ("a", "b"), 1)
     for _ in range(3):
         f.add_observation(f.root, ("a", "c"), 1)  # different sequence
     closed = f.try_close(f.root, min_samples=5, closure_epsilon=1.0)
-    assert closed is False
+    assert closed is True
+    assert f.root.status == Status.CLOSED_TRUE
 
 
 def test_try_close_below_min_samples(backend, small_uniform_dist) -> None:

@@ -481,17 +481,26 @@ class Frontier:
             return False
         if node.n_samples < min_samples:
             return False
-        if not node.observed_sequences or not node.observed_phis:
-            return False
-        first_seq = node.observed_sequences[0]
-        if any(seq != first_seq for seq in node.observed_sequences):
+        if not node.observed_phis:
             return False
         first_phi = node.observed_phis[0]
         if any(p != first_phi for p in node.observed_phis):
             return False
+        # All-paths-agree is *only* a precondition for the SMT shortcut
+        # (which verifies the region implies the observed path —
+        # meaningful only when the observed path is unique). For the
+        # sample-based concentration-bound closure path, what matters
+        # is phi agreement + the bound — divergent branch sequences
+        # within the leaf do *not* invalidate the bound on mu_leaf's
+        # disagreement rate.
+        first_seq = node.observed_sequences[0] if node.observed_sequences else None
+        all_seqs_agree = first_seq is not None and all(
+            seq == first_seq for seq in node.observed_sequences
+        )
         # SMT shortcut: verify the region implies the observed path.
+        # Only attempt this when the observed path is unique.
         smt_verified = False
-        if node.observed_paths and node.observed_paths[0]:
+        if all_seqs_agree and node.observed_paths and node.observed_paths[0]:
             path_clauses = node.observed_paths[0]
             path_formula = self.smt.conjunction(*path_clauses)
             check = self.smt.conjunction(

@@ -95,6 +95,15 @@ class SchedulerConfig:
     # caller's responsibility — see :class:`Frontier`).
     delta_close: float = 0.005
     closure_epsilon: float = 0.02
+    # Minimum fraction of variance contribution a refinement must
+    # eliminate for the refine action to be proposed. Below this
+    # threshold the refinement is "marginal" — the new children will
+    # have similar variance to the parent, but each needs its own
+    # ~``log(1/delta_close)/closure_epsilon^2`` samples to clear the
+    # concentration check at closure time. Marginal refinements
+    # over-fragment the frontier and starve every leaf of the closure
+    # budget. Default 0.25 (require at least a 25 % variance reduction).
+    min_refine_variance_reduction: float = 0.25
     max_concolic_branches: int = 10_000
     verbose: bool = False
 
@@ -311,11 +320,89 @@ class ASIPScheduler:
                 return None
         return None
 
+    def _predicted_no_refine_halfwidth(
+        self, leaf: FrontierNode, n_observed: int, h_observed: int, K_current: int
+    ) -> float:
+        """Predicted contribution of this leaf to eps_stat if we *don't*
+        refine: scale current empirical-mean estimate forward to the
+        full remaining sample budget.
+
+        Uses min(Wilson-anytime, betting CS) at the same delta_inner the
+        estimator will use.
+        """
+        from ..estimator import betting_halfwidth_anytime, wilson_halfwidth_anytime
+
+        remaining = self._budget_remaining()
+        if remaining is None or remaining <= 0:
+            n_future = n_observed
+        else:
+            # Optimistic: assume all remaining budget goes to this leaf.
+            n_future = n_observed + remaining
+        # Maintain h/n ratio under the forecast.
+        if n_observed > 0:
+            h_future = int(h_observed * n_future / n_observed)
+        else:
+            h_future = 0
+        delta_per_leaf = self.config.delta / max(K_current, 1)
+        delta_inner = delta_per_leaf / 2.0
+        h_w = wilson_halfwidth_anytime(n_future, h_future, delta_inner)
+        h_b = betting_halfwidth_anytime(n_future, h_future, delta_inner)
+        return leaf.w_hat * min(h_w, h_b)
+
+    def _predicted_refine_halfwidth(
+        self,
+        leaf: FrontierNode,
+        n_true: int, h_true: int,
+        n_false: int, h_false: int,
+        K_current: int,
+    ) -> float:
+        """Predicted contribution to eps_stat if we DO refine on this clause:
+        budget is split proportional to the observed bootstrap fraction, each
+        child uses the (K+1)-leaf delta budget.
+
+        Uses naive maintenance of the per-side h/n ratio to forecast
+        post-allocation child statistics. This is *optimistic* on the
+        empirically-uniform side (the selection effect biases ``h = 0``
+        observations low) — the predictor consequently over-recommends
+        refinement on benchmarks where the chosen clause's uniform side
+        turns out to be only ~10% phi-1 after more samples. Accepted as
+        a known limitation; correcting requires either a Bayesian
+        prior on per-side ``mu`` or a multiple-testing-corrected upper
+        bound, both of which over-suppress beneficial refinements
+        elsewhere.
+        """
+        from ..estimator import betting_halfwidth_anytime, wilson_halfwidth_anytime
+
+        remaining = self._budget_remaining()
+        if remaining is None or remaining <= 0:
+            remaining = 0
+        n_total_obs = max(n_true + n_false, 1)
+        f_t = n_true / n_total_obs
+        f_f = n_false / n_total_obs
+        n_t_future = n_true + int(remaining * f_t)
+        n_f_future = n_false + int(remaining * f_f)
+        h_t_future = int(h_true * n_t_future / n_true) if n_true else 0
+        h_f_future = int(h_false * n_f_future / n_false) if n_false else 0
+        delta_per_leaf = self.config.delta / (K_current + 1)
+        delta_inner = delta_per_leaf / 2.0
+        w_t = leaf.w_hat * f_t
+        w_f = leaf.w_hat * f_f
+        half_t = min(
+            wilson_halfwidth_anytime(n_t_future, h_t_future, delta_inner),
+            betting_halfwidth_anytime(n_t_future, h_t_future, delta_inner),
+        )
+        half_f = min(
+            wilson_halfwidth_anytime(n_f_future, h_f_future, delta_inner),
+            betting_halfwidth_anytime(n_f_future, h_f_future, delta_inner),
+        )
+        return w_t * half_t + w_f * half_f
+
     def _best_refinement_clause(
         self,
         leaf: FrontierNode,
         paths: list[list[BranchRecord]],
         path_phis: list[int],
+        require_uniform_child: bool = True,
     ) -> tuple[SMTExpr | None, float]:
         """Pick the best refinement clause for ``leaf``.
 
@@ -380,6 +467,22 @@ class ASIPScheduler:
             if n_total == 0 or n_true == 0 or n_false == 0:
                 # Doesn't separate the samples; not informative.
                 continue
+            # Under sound concentration-bounded closure, refinement into
+            # two phi-disagreeing children is a *net loss*: the per-leaf
+            # samples drop by half but the Bonferroni-corrected Wilson /
+            # betting bound only shrinks by ~sqrt(2 log(2/delta) / log(1/delta))
+            # ≈ 0.7 — so the weighted sum w_child * half_child summed over
+            # the children is roughly 2*0.5*0.7 = 0.7 *larger* than the
+            # parent's per-leaf half-width. Refinement only pays off when
+            # at least one child becomes phi-uniform (and can close).
+            # We skip clauses whose children are both empirically
+            # phi-mixed unless the caller opts out (e.g. when the gain
+            # is so large the structural reduction wins anyway).
+            if require_uniform_child:
+                true_uniform = h_true == 0 or h_true == n_true
+                false_uniform = h_false == 0 or h_false == n_false
+                if not (true_uniform or false_uniform):
+                    continue
             f_b = n_true / n_total
             # Wilson-smoothed per-side mu_var
             p_t = (h_true + 1) / (n_true + 2)
@@ -451,15 +554,112 @@ class ASIPScheduler:
                 )
             )
 
-            # Refine action — only if we have observed paths and they diverge.
+            # Refine action — only if we have observed paths AND the
+            # observations show non-trivial phi-disagreement.
+            #
+            # A leaf with all observations agreeing on phi-value cannot
+            # benefit from refinement, *regardless* of whether path
+            # sequences agree: every child it could produce inherits
+            # the same all-agree phi statistics, the per-child
+            # Wilson-smoothed mu_var stays positive at the same rate
+            # (=> the fallback "any divergent clause" gain
+            # ``max(v_pi, 1e-12)`` keeps re-proposing refinement
+            # indefinitely), and the leaf fragments into deeper
+            # phi-uniform children that all need their own
+            # closure-bound certification. This is the dominant cause
+            # of over-fragmentation under sound closure: a leaf with
+            # 200 samples all giving ``phi=1`` (e.g. ``popcount(x)≥0``)
+            # would refine 50× over the budget, never accumulating
+            # enough samples per child to clear the concentration
+            # check.
+            #
+            # The right action for a phi-uniform leaf is to *allocate*
+            # more samples, which lets the sound concentration-bounded
+            # closure rule eventually fire on the leaf as a whole.
             paths = self._leaf_paths.get(self._leaf_key(leaf), [])
             phis = self._leaf_path_phis.get(self._leaf_key(leaf), [])
+            unique_phis = set(phis)
+            phi_uniform = len(unique_phis) <= 1 and len(phis) >= 1
+
+            # Budget-aware leaf cap.
+            n_close_per_leaf = max(
+                50,
+                int(
+                    1.0 / max(self.config.closure_epsilon, 1e-6) ** 2
+                    * (1.0 + 0.5)
+                ),
+            )
+            budget_for_leaves = self.config.budget_samples or 10_000
+            max_leaves = max(2, budget_for_leaves // n_close_per_leaf)
+            n_current_leaves = sum(
+                1 for _ in self.frontier.open_leaves()
+            ) + sum(1 for _ in self.frontier.closed_leaves())
+            over_budget = n_current_leaves >= max_leaves
+
             if (
                 len(paths) >= 2
                 and leaf.depth < self.config.max_refinement_depth
+                and not phi_uniform
+                and not over_budget
             ):
                 clause, refine_gain = self._best_refinement_clause(leaf, paths, phis)
+                # Refinement-or-allocate decision: predict the *bound
+                # contribution* under each choice and refine only if
+                # refinement produces a strictly tighter predicted
+                # eps_stat contribution. The simple variance-reduction
+                # heuristic ignores the Bonferroni-vs-sample-size
+                # tradeoff that hurts on benchmarks like miller_rabin
+                # / sieve_primality where one informative refinement
+                # still *increases* the certified half-width because
+                # each child's per-leaf sample count halves while the
+                # per-leaf Wilson / betting bound only shrinks by
+                # ~sqrt(log(K+1) / log(K)).
                 if clause is not None and refine_gain > 0:
+                    # Recompute split stats for the chosen clause.
+                    canon = [
+                        [self.smt.repr_expr(br.clause_taken) for br in p]
+                        for p in paths
+                    ]
+                    key = self.smt.repr_expr(clause)
+                    n_t = h_t = n_f = h_f = 0
+                    for can, phi in zip(canon, phis, strict=True):
+                        if key in can:
+                            n_t += 1
+                            if phi:
+                                h_t += 1
+                        else:
+                            n_f += 1
+                            if phi:
+                                h_f += 1
+                    K_now = len(self.frontier.open_leaves())
+                    pred_no_refine = self._predicted_no_refine_halfwidth(
+                        leaf, leaf.n_samples, leaf.n_hits, K_now
+                    )
+                    pred_refine = self._predicted_refine_halfwidth(
+                        leaf, n_t, h_t, n_f, h_f, K_now
+                    )
+                    if pred_refine >= pred_no_refine:
+                        clause = None  # Don't refine.
+                # Under sound concentration-bounded closure, a "marginal"
+                # refinement (one that splits the leaf without making
+                # either child phi-uniform) hurts: every new child needs
+                # its own ~``log(1/delta_close)/closure_epsilon^2``
+                # samples to clear the concentration check, and the
+                # leaf's contribution to the total ``W_close`` stays the
+                # same (mass conservation). Only propose refine when
+                # the candidate clause is *highly informative* — i.e.
+                # the children are substantially closer to phi-uniform
+                # than the parent. We measure this by requiring the
+                # variance to drop by at least ``min_variance_reduction``
+                # times the parent's variance contribution.
+                v_pi = leaf.variance_contribution
+                min_variance_reduction = self.config.min_refine_variance_reduction
+                worthwhile = (
+                    clause is not None
+                    and refine_gain > 0
+                    and (v_pi <= 0 or refine_gain >= min_variance_reduction * v_pi)
+                )
+                if worthwhile:
                     actions.append(
                         _Action(
                             kind="refine",
