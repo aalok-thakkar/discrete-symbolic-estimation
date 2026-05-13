@@ -47,6 +47,8 @@ def build_methods(
     dise_budget_seconds: float = 30.0,
     dise_max_concolic_branches: int = 500,
     dise_method: str = "anytime",
+    dise_closure_epsilon: float = 0.02,
+    dise_delta_close: float = 0.005,
 ) -> list:
     # MockBackend = DiSE's documented fast configuration (sample-based
     # closure, no Z3 calls). See docs/evaluation.md §6. The Z3 backend
@@ -75,6 +77,8 @@ def build_methods(
             backend=MockBackend(),
             budget_seconds=dise_budget_seconds,
             max_concolic_branches=dise_max_concolic_branches,
+            closure_epsilon=dise_closure_epsilon,
+            delta_close=dise_delta_close,
         ),
     ]
 
@@ -93,6 +97,11 @@ def main() -> int:
     p.add_argument("--dise-method", type=str, default="anytime",
                    choices=["wilson", "anytime"],
                    help="DiSE per-leaf half-width method.")
+    p.add_argument("--dise-closure-epsilon", type=float, default=0.02,
+                   help="DiSE sample-closure disagreement budget (sound mode). "
+                        "Pass 1.0 to recover the previous unsound heuristic.")
+    p.add_argument("--dise-delta-close", type=float, default=0.005,
+                   help="DiSE per-leaf closure-failure budget (sound mode).")
     p.add_argument(
         "--out-dir", type=str, default="results/sota",
         help="Directory for JSON outputs.",
@@ -130,6 +139,8 @@ def main() -> int:
             dise_budget_seconds=args.dise_budget_seconds,
             dise_max_concolic_branches=args.dise_max_concolic_branches,
             dise_method=args.dise_method,
+            dise_closure_epsilon=args.dise_closure_epsilon,
+            dise_delta_close=args.dise_delta_close,
         )
         t_bench = time.perf_counter()
         report = run_experiment(
