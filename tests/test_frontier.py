@@ -189,11 +189,15 @@ def test_find_leaf_for_root_when_no_refinement(backend, small_uniform_dist) -> N
 
 
 def test_try_close_succeeds_on_agreement(backend, small_uniform_dist) -> None:
+    """All-agree on a tiny sample succeeds when the concentration check
+    is disabled (``closure_epsilon=1.0``). With default ``closure_epsilon``
+    of 0.02 the same input would correctly *not* close — see
+    :func:`test_try_close_concentration_check`."""
     f = Frontier(small_uniform_dist, backend)
     seq = ("c1", "c2")
     for _ in range(5):
         f.add_observation(f.root, seq, 1)
-    closed = f.try_close(f.root, min_samples=5)
+    closed = f.try_close(f.root, min_samples=5, closure_epsilon=1.0)
     assert closed is True
     assert f.root.status == Status.CLOSED_TRUE
 
@@ -204,7 +208,7 @@ def test_try_close_fails_on_disagreement(backend, small_uniform_dist) -> None:
     f.add_observation(f.root, ("c1", "c2"), 0)  # phi differs
     for _ in range(3):
         f.add_observation(f.root, ("c1", "c2"), 1)
-    closed = f.try_close(f.root, min_samples=5)
+    closed = f.try_close(f.root, min_samples=5, closure_epsilon=1.0)
     assert closed is False
     assert f.root.status == Status.OPEN
 
@@ -216,7 +220,7 @@ def test_try_close_fails_on_different_sequences(backend, small_uniform_dist) -> 
         f.add_observation(f.root, ("a", "b"), 1)
     for _ in range(3):
         f.add_observation(f.root, ("a", "c"), 1)  # different sequence
-    closed = f.try_close(f.root, min_samples=5)
+    closed = f.try_close(f.root, min_samples=5, closure_epsilon=1.0)
     assert closed is False
 
 
@@ -224,8 +228,67 @@ def test_try_close_below_min_samples(backend, small_uniform_dist) -> None:
     f = Frontier(small_uniform_dist, backend)
     for _ in range(3):
         f.add_observation(f.root, ("c1",), 1)
-    closed = f.try_close(f.root, min_samples=5)
+    closed = f.try_close(f.root, min_samples=5, closure_epsilon=1.0)
     assert closed is False
+
+
+# ---------------------------------------------------------------------------
+# Sound concentration-bounded closure
+# ---------------------------------------------------------------------------
+
+
+def test_try_close_concentration_check(backend, small_uniform_dist) -> None:
+    """Sound closure rejects all-agree on too few samples.
+
+    With ``closure_epsilon = 0.02`` and ``delta_close = 0.005``, the
+    Wilson-anytime upper bound on the disagreement rate at n=5 is far
+    above 0.02 — so closure must NOT fire even though every observation
+    agrees.
+    """
+    f = Frontier(small_uniform_dist, backend)
+    for _ in range(5):
+        f.add_observation(f.root, ("c",), 1)
+    closed = f.try_close(
+        f.root, min_samples=5, delta_close=0.005, closure_epsilon=0.02
+    )
+    assert closed is False
+    assert f.root.status == Status.OPEN
+
+
+def test_try_close_concentration_succeeds_with_enough_samples(
+    backend, small_uniform_dist
+) -> None:
+    """With enough all-agree samples, the Wilson-anytime bound dips below
+    ``closure_epsilon`` and sound closure fires. The closure budget
+    ``closure_epsilon * w_leaf`` is accumulated in
+    ``W_close_accumulated``."""
+    f = Frontier(small_uniform_dist, backend)
+    # n = 1500 is enough for wilson_halfwidth_anytime(n, 0, 0.005) < 0.02.
+    for _ in range(1500):
+        f.add_observation(f.root, ("c",), 1)
+    closed = f.try_close(
+        f.root, min_samples=5, delta_close=0.005, closure_epsilon=0.02
+    )
+    assert closed is True
+    assert f.root.status == Status.CLOSED_TRUE
+    # Root has w_hat = 1.0, so W_close_accumulated = 1.0 * 0.02 = 0.02.
+    assert abs(f.W_close_accumulated - 0.02) < 1e-9
+
+
+def test_try_close_loose_epsilon_recovers_old_behavior(
+    backend, small_uniform_dist
+) -> None:
+    """``closure_epsilon = 1.0`` recovers the original (unsound) all-agree
+    rule and contributes no closure-uncertainty mass."""
+    f = Frontier(small_uniform_dist, backend)
+    for _ in range(5):
+        f.add_observation(f.root, ("c",), 1)
+    closed = f.try_close(f.root, min_samples=5, closure_epsilon=1.0)
+    assert closed is True
+    # With epsilon=1.0, the entire leaf mass goes into W_close — but in
+    # the certified-interval computation it is clipped to [0, 1] anyway.
+    # Verify the accumulator records the contribution.
+    assert abs(f.W_close_accumulated - 1.0) < 1e-9
 
 
 # ---------------------------------------------------------------------------

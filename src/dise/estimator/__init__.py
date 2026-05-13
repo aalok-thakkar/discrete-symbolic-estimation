@@ -33,6 +33,7 @@ class EstimatorState:
     eps_stat: float
     eps_mass: float
     W_open: float
+    W_close: float
     delta: float
     interval: tuple[float, float]
     n_total_samples: int
@@ -46,6 +47,7 @@ class EstimatorState:
             f"EstimatorState(mu_hat={self.mu_hat:.4f}, "
             f"interval=[{lo:.4f}, {hi:.4f}], "
             f"eps_stat={self.eps_stat:.4g}, W_open={self.W_open:.4g}, "
+            f"W_close={self.W_close:.4g}, "
             f"delta={self.delta}, "
             f"samples={self.n_total_samples}, "
             f"leaves={self.n_leaves} (open={self.n_open_leaves}, closed={self.n_closed_leaves}))"
@@ -335,8 +337,12 @@ def compute_estimator_state(
     # Cap eps_stat at 1 (the interval is clipped anyway).
     eps_stat = min(eps_stat, 1.0)
     eps_mass = sum(math.sqrt(leaf.w_var) for leaf in leaves)
-    lo = max(0.0, mu_hat - eps_stat - W_open)
-    hi = min(1.0, mu_hat + eps_stat + W_open)
+    # Closure-uncertainty accumulator. Sample-based closures of leaves
+    # contribute `closure_epsilon * w_leaf` each into this budget; SMT-
+    # verified closures contribute 0. See :meth:`dise.regions.Frontier.try_close`.
+    W_close = getattr(frontier, "W_close_accumulated", 0.0)
+    lo = max(0.0, mu_hat - eps_stat - W_open - W_close)
+    hi = min(1.0, mu_hat + eps_stat + W_open + W_close)
 
     return EstimatorState(
         mu_hat=mu_hat,
@@ -344,6 +350,7 @@ def compute_estimator_state(
         eps_stat=eps_stat,
         eps_mass=eps_mass,
         W_open=W_open,
+        W_close=W_close,
         delta=delta,
         interval=(lo, hi),
         n_total_samples=n_total_samples,

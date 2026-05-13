@@ -76,6 +76,8 @@ def estimate(
     verbose: bool = False,
     max_refinement_depth: int = 50,
     closure_min_samples: int = 5,
+    delta_close: float = 0.005,
+    closure_epsilon: float = 0.02,
     max_concolic_branches: int = 10_000,
 ) -> EstimationResult:
     r"""Run DiSE on ``program`` against ``property_fn`` under ``distribution``.
@@ -135,6 +137,17 @@ def estimate(
         Maximum depth in the frontier tree (caps refinement recursion).
     closure_min_samples:
         Minimum samples at a leaf before sample-based closure can fire.
+    delta_close:
+        Per-leaf confidence for sound concentration-bounded sample
+        closure. The closure rule uses a Wilson-anytime upper bound on
+        the leaf's disagreement rate at this confidence level. Default
+        ``0.005``.
+    closure_epsilon:
+        Maximum disagreement rate the sample-based closure rule admits.
+        Each sample-based closure adds ``closure_epsilon * w_leaf`` to
+        the certified-interval half-width (via the ``W_close``
+        accumulator on :class:`~dise.regions.Frontier`). SMT-verified
+        closures contribute zero. Default ``0.02``.
     max_concolic_branches:
         Per-run cap on the number of branches the concolic tracer records.
 
@@ -163,6 +176,8 @@ def estimate(
         batch_size=batch_size,
         max_refinement_depth=max_refinement_depth,
         closure_min_samples=closure_min_samples,
+        delta_close=delta_close,
+        closure_epsilon=closure_epsilon,
         max_concolic_branches=max_concolic_branches,
         verbose=verbose,
     )
@@ -210,6 +225,8 @@ def failure_probability(
     verbose: bool = False,
     max_refinement_depth: int = 50,
     closure_min_samples: int = 5,
+    delta_close: float = 0.005,
+    closure_epsilon: float = 0.02,
     max_concolic_branches: int = 10_000,
 ) -> EstimationResult:
     r"""Estimate :math:`\Pr_D[P \text{ raises an exception of type } \texttt{catch}]`.
@@ -279,6 +296,8 @@ def failure_probability(
         verbose=verbose,
         max_refinement_depth=max_refinement_depth,
         closure_min_samples=closure_min_samples,
+        delta_close=delta_close,
+        closure_epsilon=closure_epsilon,
         max_concolic_branches=max_concolic_branches,
     )
 

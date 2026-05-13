@@ -140,6 +140,11 @@ class Frontier:
         self.root.w_hat = 1.0
         self.root.w_var = 0.0
         self.root.mass_computed = True
+        # Accumulated upper bound on mis-attributed mass from sample-based
+        # closure: sum over sample-closed leaves of (closure_epsilon * w_leaf).
+        # The certified interval widens by this amount. SMT-verified closures
+        # do *not* contribute (they are exact). See :meth:`try_close`.
+        self.W_close_accumulated: float = 0.0
 
     # ---- tree walks ----
 
@@ -396,25 +401,81 @@ class Frontier:
         child_true.mass_computed = True
         child_false.mass_computed = True
 
-    def try_close(self, node: FrontierNode, min_samples: int) -> bool:
-        """Apply the closure rule.
+    def try_close(
+        self,
+        node: FrontierNode,
+        min_samples: int,
+        *,
+        delta_close: float = 0.005,
+        closure_epsilon: float = 0.02,
+    ) -> bool:
+        r"""Apply the closure rule.
 
-        A leaf is closed iff:
+        A leaf is closed iff *all* of the following hold:
 
-        * ``n_samples >= min_samples``, AND
-        * all observed branch sequences are identical (path determinism
-          observed), AND
-        * all observed phi-values agree.
+        1. ``n_samples >= min_samples``.
+        2. All observed branch sequences are identical (path determinism
+           observed).
+        3. All observed phi-values agree.
+        4. Either:
+           (a) **SMT shortcut**: the leaf's region implies the observed
+               path (``F_region AND NOT path`` is unsat). This is the
+               *exact* closure path — no certified-width budget consumed.
+           (b) **Concentration bound** (when SMT returns ``unknown``):
+               an anytime-valid Wilson upper bound on the disagreement
+               rate is at most ``closure_epsilon`` at confidence
+               :math:`1 - \delta_{\text{close}}`. This is the *sound
+               approximate* path — each such closure consumes
+               ``closure_epsilon * w_leaf`` of the certified-half-width
+               budget, accumulated in :attr:`W_close_accumulated`.
 
-        Additionally, if raw path clauses are available, the SMT shortcut
-        from the brief is consulted: we verify that the leaf's region
-        implies the observed path (``F_pi AND NOT path`` is unsat). If
-        SMT returns ``sat`` (counterexample exists), closure is rejected
-        even though the sample-based criterion fired. If SMT returns
-        ``unknown`` (typical for the Mock backend or hard formulas), we
-        fall back to the sample-based decision per the brief.
+        Step 4(b) replaces the previous "if SMT says unknown, trust the
+        empirical all-agree as proof of determinism" heuristic, which is
+        *not* a (1 - delta)-coverage construction (and which on
+        ``assertion_overflow_mul_w=8_U(1,31)`` returns intervals that
+        exclude the MC truth on every seed). The new rule converts that
+        empirical signal into a calibrated upper bound: with at least
+        ``1 - delta_close`` probability, the leaf's actual disagreement
+        rate (= fraction of inputs whose property value differs from the
+        observed mode) is at most ``closure_epsilon``. The mass
+        attribution to ``CLOSED_TRUE`` / ``CLOSED_FALSE`` is therefore
+        accurate up to ``closure_epsilon`` — and this slack is added to
+        the certified interval's half-width via
+        :attr:`W_close_accumulated`.
 
-        Returns ``True`` if the node was closed.
+        Parameters
+        ----------
+        node : FrontierNode
+            The leaf to attempt to close.
+        min_samples : int
+            Lower bound on ``n_samples`` before closure may be attempted.
+            The concentration check enforces a stronger implicit lower
+            bound (Wilson-anytime at the requested ``closure_epsilon`` and
+            ``delta_close``), so ``min_samples`` is a sanity floor.
+        delta_close : float, default 0.005
+            Per-leaf confidence for the sample-based closure test. The
+            Wilson-anytime bound used here is *anytime-valid in n*, so
+            a single leaf may be retried at increasing sample counts
+            without inflating the failure rate. Bonferroni over leaves is
+            the caller's responsibility (see the scheduler config).
+        closure_epsilon : float, default 0.02
+            Maximum disagreement rate the closure test admits. Smaller
+            values are sound but require more samples (sample count
+            scales as :math:`O(\log(1/\delta_\text{close}) / \epsilon_c^2)`).
+            For ``closure_epsilon = 0.02, delta_close = 0.005`` the
+            implicit lower bound on ``n`` is roughly 1000.
+
+        Returns
+        -------
+        bool
+            ``True`` iff the node was closed (status updated to
+            ``CLOSED_TRUE`` / ``CLOSED_FALSE``).
+
+        See Also
+        --------
+        :func:`dise.estimator.wilson_halfwidth_anytime` — the
+            time-uniform upper bound used to certify the leaf's
+            disagreement rate.
         """
         if node.status != Status.OPEN:
             return False
@@ -429,6 +490,7 @@ class Frontier:
         if any(p != first_phi for p in node.observed_phis):
             return False
         # SMT shortcut: verify the region implies the observed path.
+        smt_verified = False
         if node.observed_paths and node.observed_paths[0]:
             path_clauses = node.observed_paths[0]
             path_formula = self.smt.conjunction(*path_clauses)
@@ -437,9 +499,24 @@ class Frontier:
             )
             result = self.smt.is_satisfiable(check)
             if result == "sat":
-                # Counterexample exists: region is not path-deterministic.
                 return False
-            # "unsat" → confirmed; "unknown" → fall back to sample-based.
+            if result == "unsat":
+                smt_verified = True
+            # "unknown" → fall through to the concentration-bound check.
+        if not smt_verified:
+            # Sample-based closure via Wilson-anytime upper bound on the
+            # disagreement rate. All-agree observation: h = 0 (in the
+            # "disagreement" coordinate). The bound is one-sided; for
+            # mu_hat = 0 the Wilson-anytime half-width equals the upper
+            # bound on the true mu.
+            from ..estimator import wilson_halfwidth_anytime
+
+            disagreement_bound = wilson_halfwidth_anytime(
+                node.n_samples, 0, delta_close
+            )
+            if disagreement_bound > closure_epsilon:
+                return False
+            self.W_close_accumulated += node.w_hat * closure_epsilon
         node.status = Status.CLOSED_TRUE if first_phi else Status.CLOSED_FALSE
         return True
 

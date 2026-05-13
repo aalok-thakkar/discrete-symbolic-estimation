@@ -81,6 +81,20 @@ class SchedulerConfig:
     n_mass_samples: int = 1000
     smt_timeout_ms: int = 5000
     closure_min_samples: int = 5
+    # Sound concentration-bounded closure parameters. The closure rule
+    # (see :meth:`dise.regions.Frontier.try_close`) fires only when an
+    # anytime-valid Wilson upper bound on the per-leaf disagreement rate
+    # is at most ``closure_epsilon`` at confidence ``1 - delta_close``.
+    # Each sample-based closure contributes ``closure_epsilon * w_leaf``
+    # to the certified-interval half-width via the W_close accumulator.
+    # SMT-verified closures contribute zero (they are exact).
+    #
+    # Defaults: closure_epsilon = 0.02 requires roughly 1000 samples per
+    # leaf to fire; delta_close = 0.005 is the per-leaf failure
+    # probability budget (the union bound over closed leaves is the
+    # caller's responsibility — see :class:`Frontier`).
+    delta_close: float = 0.005
+    closure_epsilon: float = 0.02
     max_concolic_branches: int = 10_000
     verbose: bool = False
 
@@ -258,7 +272,12 @@ class ASIPScheduler:
     def _try_close_all(self) -> int:
         n_closed = 0
         for leaf in self.frontier.open_leaves():
-            if self.frontier.try_close(leaf, self.config.closure_min_samples):
+            if self.frontier.try_close(
+                leaf,
+                self.config.closure_min_samples,
+                delta_close=self.config.delta_close,
+                closure_epsilon=self.config.closure_epsilon,
+            ):
                 n_closed += 1
                 # Drop the leaf's local paths once closed.
                 key = self._leaf_key(leaf)
