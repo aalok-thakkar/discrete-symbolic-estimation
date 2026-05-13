@@ -327,10 +327,19 @@ class DiSEBaseline(Baseline):
         )
 
 
+from .sota import (  # noqa: E402
+    AdaptiveHoeffding,
+    BettingConfidenceSequence,
+    EmpiricalBernsteinStopping,
+)
+
 __all__ = [
     "Baseline",
     "BaselineResult",
     "DiSEBaseline",
     "PlainMonteCarlo",
     "StratifiedRandomMC",
+    "AdaptiveHoeffding",
+    "EmpiricalBernsteinStopping",
+    "BettingConfidenceSequence",
 ]
