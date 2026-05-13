@@ -260,8 +260,11 @@ def test_epsilon_reached_termination(backend) -> None:
     s = ASIPScheduler(prog, dist, lambda y: y < 5, backend, cfg, np.random.default_rng(0))
     result = s.run()
     assert result.terminated_reason == "epsilon_reached"
-    eps_total = result.final_estimator.eps_stat + result.final_estimator.W_open
-    assert eps_total <= 0.1
+    # Certified half-width = eps_stat + 2*eps_mass + W_close (see
+    # compute_estimator_state); read directly from the reported
+    # interval so the test stays robust to representation changes.
+    lo, hi = result.final_estimator.interval
+    assert (hi - lo) / 2.0 <= 0.1 + 1e-9
 
 
 # ---------------------------------------------------------------------------

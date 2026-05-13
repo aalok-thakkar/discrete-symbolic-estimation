@@ -11,11 +11,11 @@ Given a program $P$, a discrete distribution $D$ over its inputs, a
 Boolean property $\varphi$, a target accuracy $(\varepsilon, \delta)$
 and (optionally) a sample budget, DiSE returns an estimate $\hat\mu$ of
 $\Pr_{x \sim D}[\varphi(P(x)) = 1]$ together with a **certified
-two-sided half-width** $\varepsilon_{\text{stat}} + W_{\text{open}}$
+two-sided half-width** $\varepsilon_{\text{stat}} + \varepsilon_{\text{mass}} + W_{\text{close}}$
 such that
 
 $$
-\Pr\big[\,|\hat\mu - \mu| \le \varepsilon_{\text{stat}} + W_{\text{open}}\,\big]
+\Pr\big[\,|\hat\mu - \mu| \le \varepsilon_{\text{stat}} + \varepsilon_{\text{mass}} + W_{\text{close}}\,\big]
 \;\ge\; 1 - \delta.
 $$
 

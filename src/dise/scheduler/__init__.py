@@ -706,7 +706,14 @@ class ASIPScheduler:
         if self._time_exhausted():
             self.terminated_reason = "time_exhausted"
             return True, state
-        if state.eps_stat + state.W_open <= self.config.epsilon:
+        # The certified half-width is `eps_stat + eps_mass_certified +
+        # W_close` (see ``compute_estimator_state`` and docs/algorithm.md
+        # §1). Use the actual interval rather than approximating from
+        # individual fields so the termination check matches whatever
+        # construction the estimator implements.
+        lo, hi = state.interval
+        cert_half = max((hi - lo) / 2.0, 0.0)
+        if cert_half <= self.config.epsilon:
             self.terminated_reason = "epsilon_reached"
             return True, state
         return False, state

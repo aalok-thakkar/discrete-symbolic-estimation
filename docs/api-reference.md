@@ -79,8 +79,9 @@ Dataclass returned by :func:`estimate` and :func:`failure_probability`.
 |----------------------|-----------------------|--------------------------------------------------------------------------|
 | ``mu_hat``           | ``float``             | Point estimate.                                                          |
 | ``interval``         | ``tuple[float, float]`` | Certified two-sided interval at confidence :math:`1 - \delta`.        |
-| ``eps_stat``         | ``float``             | Statistical half-width contribution.                                     |
-| ``W_open``           | ``float``             | Mass of unresolved (OPEN) leaves at termination.                         |
+| ``eps_stat``         | ``float``             | Statistical (per-leaf concentration) half-width contribution.            |
+| ``W_open``           | ``float``             | Diagnostic: mass of unresolved (OPEN) leaves at termination. *Not* a half-width term (see ``docs/algorithm.md`` §1 "Why no W_open"). |
+| ``W_close``          | ``float``             | Closure-attribution half-width contribution: $\sum_{\pi \in \Pi^{\text{close-conc}}} \hat w_\pi \cdot \varepsilon_{\text{close}}$. |
 | ``delta``            | ``float``             | The confidence parameter passed in.                                      |
 | ``samples_used``     | ``int``               | Concolic-run count.                                                      |
 | ``refinements_done`` | ``int``               | Number of SMT refinement events.                                         |
@@ -282,22 +283,29 @@ Aggregates the frontier into an :class:`EstimatorState`. Methods:
 
 * ``"wilson"`` (default) — Bonferroni-Wilson; tightest at fixed
   sample counts.
-* ``"anytime"`` — time-uniform Wilson via Bonferroni-in-time; sound
-  under ASIP's adaptive stopping (recommended for ATVA-grade
-  certificates).
+* ``"anytime"`` — per-leaf bound is ``min(Wilson-anytime, betting-CS)``
+  each at half the per-leaf delta (Bonferroni split). Sound under
+  adaptive stopping; tighter than pure Wilson-anytime in the interior
+  of [0,1]. **Recommended default for ASIP runs.**
 * ``"bernstein"`` — classical Bernstein on total estimator variance.
 * ``"empirical-bernstein"`` — Maurer–Pontil 2009.
 
 ### `EstimatorState`
 
 Dataclass with ``mu_hat``, ``variance``, ``eps_stat``, ``eps_mass``,
-``W_open``, ``delta``, ``interval``, ``n_total_samples``,
-``n_leaves``, ``n_open_leaves``, ``n_closed_leaves``.
+``W_open`` (diagnostic only), ``W_close``, ``delta``, ``interval``,
+``n_total_samples``, ``n_leaves``, ``n_open_leaves``, ``n_closed_leaves``.
+
+The certified interval is
+``mu_hat ± (eps_stat + 2·eps_mass + W_close)`` (clipped to [0, 1]);
+see ``docs/algorithm.md`` §1 for the decomposition.
 
 ### Half-width primitives
 
 * ``wilson_halfwidth_for_leaf(n, h, delta)`` — fixed-n Wilson.
 * ``wilson_halfwidth_anytime(n, h, delta)`` — time-uniform Wilson.
+* ``betting_halfwidth_anytime(n, h, delta)`` — fixed-design
+  Hedged-Capital betting CS (Waudby-Smith & Ramdas 2024).
 * ``bernstein_halfwidth(variance, delta, per_sample_bound=1.0)``.
 * ``empirical_bernstein_halfwidth_mp(empirical_variance, n, delta,
   range_bound=1.0)``.
@@ -319,7 +327,16 @@ Tuning knobs (see docstring for the four termination conditions):
 * ``method`` — see :func:`compute_estimator_state`
 * ``bootstrap_samples``, ``batch_size``
 * ``refinement_cost_in_samples``, ``max_refinement_depth``
-* ``n_mass_samples`` — IS batch size for general-region mass
+* ``min_refine_variance_reduction`` — variance-reduction floor for
+  the refinement gate (default 0.25). See ``docs/algorithm.md`` §9.1.
+* ``n_mass_samples`` — IS batch size for general-region mass.
+  Larger → smaller ``eps_mass`` contribution.
+* ``delta_close`` — per-leaf failure budget for concentration-bounded
+  closure (default 0.005). ``docs/algorithm.md`` §6.3.
+* ``closure_epsilon`` — disagreement budget per sample-closed leaf;
+  the closure rule fires when ``Wilson-anytime(n, 0, delta_close) ≤
+  closure_epsilon``. Each closure contributes ``closure_epsilon ·
+  w_leaf`` to ``W_close``. Default 0.02.
 * ``smt_timeout_ms``, ``closure_min_samples``, ``max_concolic_branches``
 * ``verbose``
 

@@ -34,6 +34,7 @@ class EstimationResult:
     interval: tuple[float, float]
     eps_stat: float
     W_open: float
+    W_close: float
     delta: float
     samples_used: int
     refinements_done: int
@@ -53,7 +54,7 @@ class EstimationResult:
         return (
             f"EstimationResult(mu_hat={self.mu_hat:.4f}, "
             f"interval=[{lo:.4f}, {hi:.4f}], "
-            f"eps_stat={self.eps_stat:.4g}, W_open={self.W_open:.4g}, "
+            f"eps_stat={self.eps_stat:.4g}, W_close={self.W_close:.4g}, "
             f"samples={self.samples_used}, refinements={self.refinements_done}, "
             f"terminated={self.terminated_reason!r})"
         )
@@ -198,6 +199,7 @@ def estimate(
         interval=state.interval,
         eps_stat=state.eps_stat,
         W_open=state.W_open,
+        W_close=state.W_close,
         delta=state.delta,
         samples_used=sched_result.samples_used,
         refinements_done=sched_result.refinements_done,

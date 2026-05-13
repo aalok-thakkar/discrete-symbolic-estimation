@@ -22,17 +22,43 @@ $$
 $$
 
 DiSE outputs an estimator $\hat\mu$ and a **certified two-sided
-half-width** $\varepsilon_{\text{stat}} + W_{\text{open}}$ such that
+half-width** $\varepsilon_{\text{stat}} + \varepsilon_{\text{mass}} +
+W_{\text{close}}$ such that
 
 $$
-\Pr\big[\,|\hat\mu - \mu| \le \varepsilon_{\text{stat}} + W_{\text{open}}\,\big]
+\Pr\big[\,|\hat\mu - \mu| \le \varepsilon_{\text{stat}} + \varepsilon_{\text{mass}} + W_{\text{close}}\,\big]
 \;\ge\; 1 - \delta.
 $$
 
+The three additive components have separate origins:
+
+* $\varepsilon_{\text{stat}}$ — *per-open-leaf sampling uncertainty*,
+  a union-bound over the open leaves of an anytime-valid concentration
+  half-width on each leaf's empirical mean (§7.4).
+* $\varepsilon_{\text{mass}}$ — *mass-MC uncertainty* on leaves whose
+  mass $\hat w_\pi$ is estimated by importance sampling. Exactly zero
+  on axis-aligned leaves (closed-form mass) and small (proportional to
+  $1/\sqrt{N}$ where $N$ is `n_mass_samples`) on `GeneralRegion`
+  leaves.
+* $W_{\text{close}}$ — *closure-attribution uncertainty* from
+  sample-based concentration closure (§6). Each leaf closed via the
+  sample path contributes $\varepsilon_{\text{close}} \cdot \hat
+  w_\pi$ to this accumulator; SMT-verified closures contribute zero.
+
 The reported interval is
-$\big[\max(0, \hat\mu - \varepsilon_{\text{stat}} - W_{\text{open}}),
- \min(1, \hat\mu + \varepsilon_{\text{stat}} + W_{\text{open}})\big]$,
+$\big[\max(0, \hat\mu - \varepsilon_{\text{stat}} - \varepsilon_{\text{mass}} - W_{\text{close}}),
+ \min(1, \hat\mu + \varepsilon_{\text{stat}} + \varepsilon_{\text{mass}} + W_{\text{close}})\big]$,
 clipped to $[0, 1]$ since $\mu \in [0, 1]$ a priori.
+
+**Why no $W_{\text{open}}$ term?** Earlier versions of DiSE included an
+additive $W_{\text{open}} = \sum_{\pi \in \Pi^{\text{open}}} \hat w_\pi$
+on the half-width as a deterministic worst-case envelope (the bound
+$\mu_\pi \in [0, 1]$). The current bound subsumes this contribution
+via $\varepsilon_{\text{stat}}$ — the per-leaf Wilson / betting CS
+already bounds $|\mu_\pi - \hat\mu_\pi|$ with high probability, and
+multiplying by $\hat w_\pi$ and summing gives the correct tighter
+bound. The pre-revision treatment was a loose upper bound on the same
+event. See §7.3 for the proof rewrite.
 
 The prototype's headline regime is class **(D1)** — product-form
 distributions over integer programs. Classes (D2) Bayes-net-structured
@@ -194,21 +220,29 @@ Implementation: [`Frontier._proportional_split_mass`](../src/dise/regions/_front
 
 ## 6. Closure rule
 
-A leaf $\pi$ is *closed* if every input it admits leads to the same
-path through $P$ and hence — by determinism of $P$ — the same
-$\varphi$-value.
+A leaf $\pi$ is *closed* when DiSE attributes the leaf's
+contribution to $\hat\mu$ as $\hat w_\pi \cdot \{0, 1\}$ (one or zero,
+not a partial sample mean). Closure is either *exact* (proved via SMT)
+or *approximate-but-bounded* (validated via a Wilson-anytime
+concentration test, with the residual error charged to
+$W_{\text{close}}$).
 
-### 6.1 Sample-based closure (heuristic)
+### 6.1 Preconditions (both paths)
 
 A leaf $\pi$ is *eligible* for closure when:
 
-1. $n_\pi \ge n_{\min}$ (`closure_min_samples`), and
-2. every observed branch sequence at $\pi$ is identical, and
-3. every observed $\varphi$-value agrees.
+1. $n_\pi \ge n_{\min}$ (`closure_min_samples`); and
+2. every observed $\varphi$-value at $\pi$ agrees.
 
-### 6.2 Symbolic shortcut (sound)
+These two conditions are necessary for both the SMT and the
+concentration paths. Note that *branch-sequence agreement is not
+required* for the concentration path — the algorithm's earlier
+revisions required it but the bound only depends on the Bernoulli
+sequence of $\varphi$ values, not on the internal control-flow.
 
-If the SMT backend additionally proves
+### 6.2 SMT-verified closure (exact)
+
+If the SMT backend proves
 
 $$
 F_\pi \wedge \neg \big(b_1 \wedge \cdots \wedge b_k\big) \;\models\; \bot,
@@ -216,15 +250,67 @@ $$
 
 where $b_1, \ldots, b_k$ are the *observed* clauses beyond
 $\mathrm{depth}(\pi)$, then *every* $x \in R_\pi$ traverses the
-observed path. By determinism, $\varphi(P(\cdot))$ is constant on
-$R_\pi$ — closure is **certified**.
+observed path. By determinism of $P$, $\varphi(P(\cdot))$ is constant
+on $R_\pi$ — closure is **exact** (zero contribution to
+$W_{\text{close}}$). The SMT path requires the additional precondition
+that all observed branch sequences agree (otherwise the path being
+verified is not unique).
 
-DiSE invokes the shortcut whenever raw path clauses are available
-(the scheduler always provides them). If the backend returns `unknown`
-— typical for `MockBackend` on non-axis-aligned arithmetic — closure
-falls back to the sample-based criterion per the brief.
+### 6.3 Concentration-bounded closure (sound approximation)
+
+When SMT returns `unknown` (typical on non-LIA arithmetic, the
+`MockBackend`, or hard formulas), DiSE falls back to a sample-based
+test. Let $v_\pi$ be the agreed-upon $\varphi$ value (0 or 1) and let
+$q_\pi \;=\; \Pr_{x \sim D \mid R_\pi}\!\big[\varphi(P(x)) \neq v_\pi\big]$
+be the true *disagreement rate* in $R_\pi$. The closure rule fires iff
+
+$$
+\mathrm{Wilson}_{\text{anytime}}\!\big(n_\pi, 0, \delta_{\text{close}}\big)
+\;\le\; \varepsilon_{\text{close}},
+$$
+
+where the Wilson-anytime half-width is evaluated at the *observed
+all-agree* count (i.e. zero disagreements among $n_\pi$ samples) and
+the per-leaf failure budget $\delta_{\text{close}}$ (default
+$0.005$). The Wilson-anytime bound is *one-sided* on $q_\pi$ when
+$\hat\mu_\pi = 0$, and by the time-uniform guarantee
+
+$$
+\Pr\!\big[\,\exists t \ge 1 : q_\pi > \mathrm{Wilson}_{\text{anytime}}(t, 0, \delta_{\text{close}})\,\big]
+\;\le\; \delta_{\text{close}}.
+$$
+
+So *with probability* $\ge 1 - \delta_{\text{close}}$, the post-closure
+attribution $\hat w_\pi \cdot v_\pi$ differs from the true contribution
+$\hat w_\pi \cdot \mu_\pi$ by at most $\hat w_\pi \cdot
+\varepsilon_{\text{close}}$. The algorithm accumulates this allowance
+into a global accumulator
+
+$$
+W_{\text{close}}(t) \;:=\; \sum_{\pi\,\text{closed via sample path before }t} \hat w_\pi \cdot \varepsilon_{\text{close}},
+$$
+
+which appears as an additive component of the certified half-width
+(§1 and §7).
+
+The Wilson-anytime construction is anytime-valid in $n_\pi$, so a
+leaf may be re-tested at increasing sample counts without inflating
+$\delta_{\text{close}}$ per leaf. Across $K$ sample-closed leaves the
+union-bound budget is $K \cdot \delta_{\text{close}}$ — the caller
+chooses $\delta_{\text{close}}$ small enough to absorb this.
 
 Implementation: [`Frontier.try_close`](../src/dise/regions/_frontier.py).
+The signature is
+
+```python
+Frontier.try_close(
+    node, min_samples,
+    *, delta_close=0.005, closure_epsilon=0.02,
+) -> bool
+```
+
+with the accumulator `Frontier.W_close_accumulated` exposed for
+inspection / aggregation in `compute_estimator_state`.
 
 ## 7. Theorem 2 (certified two-sided interval, anytime-valid)
 
@@ -260,75 +346,116 @@ We assume:
   ``sat`` when the formula is unsatisfiable, never ``unsat`` when
   satisfiable. (May return ``unknown``.)
 * **(A4) Sound closure.** A leaf is closed as ``CLOSED_TRUE`` (resp.
-  ``CLOSED_FALSE``) only if Theorem 3's symbolic-shortcut hypothesis
-  holds with ``unsat`` from the backend, or — for ``unknown`` — every
-  observed sample at the leaf agreed and $n_\pi \ge n_{\min}$.
+  ``CLOSED_FALSE``) only if either:
+  (a) Theorem 3's symbolic-shortcut hypothesis holds with ``unsat`` from
+      the backend (the SMT path — closure is exact); or
+  (b) every observed $\varphi$ at the leaf agreed, $n_\pi \ge n_{\min}$,
+      and
+      $\mathrm{Wilson}_{\text{anytime}}(n_\pi, 0, \delta_{\text{close}})
+      \le \varepsilon_{\text{close}}$ (the concentration path — closure
+      is approximate, residual error charged to $W_{\text{close}}$ at
+      level $\delta_{\text{close}}$ per leaf).
 
 Assumptions A1–A3 are *exact*. A4 is exact for the SMT shortcut on a
-sound backend (Theorem 3); for the sample-only fallback it is a
-high-probability heuristic — see §13.4 for the residual-bias bound.
+sound backend (Theorem 3); the concentration path is sound at
+confidence $\ge 1 - \delta_{\text{close}}$ per leaf by Wilson's
+time-uniform inequality (see §6.3 and §13.4).
 
 ### 7.2 Statement
 
-Let $\Pi_T = \Pi_T^{\text{open}} \,\cup\, \Pi_T^{\text{closed}} \,\cup\,
-\Pi_T^{\text{empty}}$ be the disjoint decomposition of leaves at the
-stopping time. Let
-$W_{\text{open}}(T) = \sum_{\pi \in \Pi_T^{\text{open}}} \hat w_\pi$
-and let $\varepsilon_{\text{stat}}(T)$ be an *anytime-valid*
-$(1 - \delta)$ half-width on $\sum_{\pi \in \Pi_T^{\text{open}}}
-\hat w_\pi \hat\mu_\pi$ (concrete constructions in §7.4).
-
-**Theorem 2.** *Under (A1)–(A4),*
+Let $\Pi_T = \Pi_T^{\text{open}} \,\cup\, \Pi_T^{\text{closed}-\text{smt}}
+\,\cup\, \Pi_T^{\text{closed}-\text{conc}} \,\cup\, \Pi_T^{\text{empty}}$
+be the disjoint decomposition of leaves at the stopping time, with
+SMT-closed and concentration-closed leaves distinguished. Let
 
 $$
-\mathbb P\Big[\,\big|\hat\mu_T - \mu\big| \;\le\; \varepsilon_{\text{stat}}(T) + W_{\text{open}}(T)\Big]
+W_{\text{close}}(T) \;:=\; \sum_{\pi \in \Pi_T^{\text{closed}-\text{conc}}} \hat w_\pi \cdot \varepsilon_{\text{close}},
+\qquad
+\varepsilon_{\text{mass}}(T) \;:=\; z \cdot \sum_{\pi \in \Pi_T} \sqrt{\widehat{\mathrm{Var}}(\hat w_\pi)}
+$$
+
+with $z \approx 2$ a Wilson constant (defaults to $z = 2.0$,
+corresponding to a $\sim 95\%$ confidence per leaf on the mass
+estimator). Let $\varepsilon_{\text{stat}}(T)$ be an *anytime-valid*
+half-width on $\sum_{\pi \in \Pi_T^{\text{open}}} \hat w_\pi \hat\mu_\pi$
+(concrete constructions in §7.4).
+
+**Theorem 2.** *Under (A1)–(A4) and with the union-bound budget*
+
+$$
+\delta \;=\; \delta_{\text{stat}} + \delta_{\text{mass}} + K_{\text{close}}(T) \cdot \delta_{\text{close}},
+$$
+
+*where $K_{\text{close}}(T)$ is the number of sample-closed leaves at
+$T$ and the inner budgets $(\delta_{\text{stat}},
+\delta_{\text{mass}}, \delta_{\text{close}})$ are configured by the
+caller,*
+
+$$
+\mathbb P\Big[\,\big|\hat\mu_T - \mu\big| \;\le\; \varepsilon_{\text{stat}}(T) + \varepsilon_{\text{mass}}(T) + W_{\text{close}}(T)\Big]
 \;\ge\; 1 - \delta.
 $$
 
 ### 7.3 Proof
 
-Write
+Write the total error as a sum over leaves:
 
 $$
 \mu - \hat\mu_T \;=\;
-\underbrace{\sum_{\pi \in \Pi_T^{\text{open}}} \big(w_\pi \mu_\pi - \hat w_\pi \hat\mu_\pi\big)}_{\text{open-region error}}
-\;+\; \underbrace{\sum_{\pi \in \Pi_T^{\text{closed}}} \big(w_\pi - \hat w_\pi\big)\mu_\pi}_{\text{mass error on closed leaves}}.
+\sum_{\pi \in \Pi_T^{\text{open}}} \big(w_\pi \mu_\pi - \hat w_\pi \hat\mu_\pi\big)
+\;+\;
+\sum_{\pi \in \Pi_T^{\text{closed}}} \big(w_\pi \mu_\pi - \hat w_\pi v_\pi\big)
 $$
 
-The closed-mass term vanishes for axis-aligned closed leaves
-($\hat w_\pi = w_\pi$ exactly).
+where $v_\pi \in \{0, 1\}$ is the closure-assigned value on closed
+leaves.
 
-For each open term, decompose
+For an *open* leaf, decompose
 
 $$
 w_\pi \mu_\pi - \hat w_\pi \hat\mu_\pi
 = (w_\pi - \hat w_\pi)\mu_\pi + \hat w_\pi(\mu_\pi - \hat\mu_\pi).
 $$
 
-Take absolute values. Since $\mu_\pi \in [0, 1]$, the deterministic
-contribution is bounded by $|w_\pi - \hat w_\pi| + \hat w_\pi$, summed
-to at most $W_{\text{open}}(T)$ (using the mass-conservation invariant;
-see §5).
+The first term is a mass-MC error; bounding $\mu_\pi \le 1$ gives
+$|(w_\pi - \hat w_\pi)\mu_\pi| \le |w_\pi - \hat w_\pi|$. Across all
+leaves, $\sum_\pi |w_\pi - \hat w_\pi| \le \varepsilon_{\text{mass}}(T)$
+with probability $\ge 1 - \delta_{\text{mass}}$ — by the Wilson plug-in
+$|w_\pi - \hat w_\pi| \le z \sqrt{\widehat{\mathrm{Var}}(\hat w_\pi)}$
+at confidence $1 - \delta_{\text{mass}}$ (and zero on axis-aligned
+leaves where $\hat w_\pi = w_\pi$ exactly). The second term is the
+*sampling* error on the per-leaf empirical mean; summing
+$\sum_\pi \hat w_\pi \cdot |\mu_\pi - \hat\mu_\pi|$ is bounded by
+$\varepsilon_{\text{stat}}(T)$ at confidence $1 - \delta_{\text{stat}}$
+via the anytime-valid per-leaf construction and Bonferroni over the at
+most $K_T$ open leaves (§7.4).
 
-The stochastic contribution
-$\sum_{\pi \in \Pi_T^{\text{open}}} \hat w_\pi (\hat\mu_\pi - \mu_\pi)$
-is bounded with probability $\ge 1 - \delta$ by
-$\varepsilon_{\text{stat}}(T)$ if the per-leaf bounds are
-*time-uniform* (anytime valid). Specifically, applying the time-uniform
-Wilson bound (Howard, Ramdas, McAuliffe, Sekhon 2021) at confidence
-$\delta_K = \delta / K_{\max}$ — where $K_{\max} \le 2^d$ is the
-absolute maximum number of leaves the algorithm can create —
-each leaf's stopped sample-mean deviation is controlled:
+For an *SMT-closed* leaf,
+$\mu_\pi = v_\pi$ exactly (Theorem 3); the error term is just the
+mass-MC contribution, already covered by $\varepsilon_{\text{mass}}$.
 
-$$
-\mathbb P\Big[\,\exists t \ge 1\!: |\hat\mu_\pi(t) - \mu_\pi| > h_t^{(\pi)}\,\Big] \;\le\; \delta_K.
-$$
+For a *concentration-closed* leaf, $\mu_\pi$ may differ from $v_\pi$
+by up to $\varepsilon_{\text{close}}$ with probability $\ge 1 -
+\delta_{\text{close}}$ (§6.3). Hence
+$|w_\pi \mu_\pi - \hat w_\pi v_\pi| \le |w_\pi - \hat w_\pi| \cdot 1 +
+\hat w_\pi \cdot \varepsilon_{\text{close}}$. The mass term is already
+absorbed by $\varepsilon_{\text{mass}}$; the closure term sums across
+sample-closed leaves to exactly $W_{\text{close}}(T)$.
 
-Summing over the at-most $K_{\max}$ leaves and weighting by
-$\hat w_\pi$ yields $\varepsilon_{\text{stat}}(T)$. The union of the
-deterministic bound and the stochastic bound covers $|\hat\mu_T - \mu|
-\le \varepsilon_{\text{stat}}(T) + W_{\text{open}}(T)$ with
-probability $\ge 1 - \delta$. $\square$
+Combining the three event-budgets by union bound gives
+$|\hat\mu_T - \mu| \le \varepsilon_{\text{stat}} + \varepsilon_{\text{mass}}
++ W_{\text{close}}$ at confidence $\ge 1 - \delta$ where $\delta$
+absorbs the three inner budgets as stated. $\square$
+
+**Why no $W_{\text{open}}$ term?** Earlier (pre-revision) statements
+of Theorem 2 carried an additional $W_{\text{open}}(T) = \sum_{\pi \in
+\Pi_T^{\text{open}}} \hat w_\pi$ on the half-width. That term came
+from bounding the per-leaf sampling error $|\mu_\pi - \hat\mu_\pi|$
+by the trivial $\le 1$ — using the constraint $\mu_\pi \in [0, 1]$.
+The current bound uses the *anytime Wilson / betting CS* bound
+$|\mu_\pi - \hat\mu_\pi| \le h_\pi$, which is tighter on every leaf
+with at least a few samples. Both bounds are sound; the new one is
+just sharper.
 
 **Remark (post-refinement freshness).** When the scheduler refines a
 leaf $\pi$, the parent's samples are *dropped*; the children receive
@@ -338,52 +465,61 @@ therefore depends only on samples that are i.i.d. *conditional on the
 leaf they were drawn from*. Refinement decisions can use any sample
 data without contaminating the certified estimate.
 
-### 7.4 Three concrete half-width constructions
+### 7.4 Concrete half-width constructions for $\varepsilon_{\text{stat}}$
 
-All three constructions are sound at level $1 - \delta$; they differ in
-tightness and validity regime.
+All constructions below are sound at level $1 - \delta_{\text{stat}}$;
+they differ in tightness and validity regime.
 
-* **Wilson + Bonferroni** (``method="wilson"``).
-  Each open leaf gets confidence $1 - \delta/K_T$:
+* **Wilson + Bonferroni** (`method="wilson"`).
+  Each open leaf gets confidence $1 - \delta_{\text{stat}}/K_T$:
 
   $$
   \varepsilon_{\text{stat}}(T) \;=\; \sum_{\pi \in \Pi_T^{\text{open}}} \hat w_\pi \cdot
-  \mathrm{Wilson}\!\big(n_\pi(T), h_\pi(T), \delta/K_T\big).
+  \mathrm{Wilson}\!\big(n_\pi(T), h_\pi(T), \delta_{\text{stat}}/K_T\big).
   $$
 
   **Validity regime:** non-adaptive stopping (e.g. fixed budget reached
-  on every run). Practical default for the main tables; tightest of
-  the three on Bernoulli leaves.
+  on every run). Tightest of the constructions at fixed $n$.
 
-* **Anytime Wilson + Bonferroni** (``method="anytime"``).
-  Each per-leaf bound is the time-uniform Wilson interval (§13.1),
-  union-bounded over $n$ via the Basel identity
-  $\sum_{n \ge 1} 6/(\pi^2 n^2) = 1$:
+* **Anytime: min(Wilson-anytime, betting CS)** (`method="anytime"` — recommended).
+  Each per-leaf bound is the *intersection* of two anytime-valid
+  $(1 - \delta_{\text{inner}})$ confidence intervals, with
+  $\delta_{\text{inner}} = \delta_{\text{stat}} / (2 K_T)$
+  (Bonferroni over the two constructions, then over $K_T$ open leaves):
 
   $$
   \varepsilon_{\text{stat}}(T) \;=\; \sum_{\pi \in \Pi_T^{\text{open}}} \hat w_\pi \cdot
-  \mathrm{Wilson}\!\Big(n_\pi(T), h_\pi(T), \tfrac{6\delta}{\pi^2 \, n_\pi^2(T) \, K_T}\Big).
+  \min\!\big(\mathrm{Wilson}_{\text{anytime}}, \mathrm{Betting}_{\text{CS}}\big)\!\big(n_\pi, h_\pi, \delta_{\text{inner}}\big).
   $$
 
-  **Validity regime:** *adaptive* stopping (``epsilon_reached``
-  computed from the observed interval) and *adaptive* per-leaf sample
-  sizes — both true of ASIP. **This is the bound to cite for
-  certificates under the actual algorithm.** Slightly looser than
-  ``"wilson"`` by a $\sqrt{\log n_\pi}$ factor.
+  The Wilson-anytime path applies the fixed-$n$ Wilson interval at
+  $\delta_n = 6 \delta_{\text{inner}} / (\pi^2 n^2)$, union-bounded
+  over $n$ via the Basel identity. The betting-CS path is a
+  hedged-capital construction (Waudby-Smith & Ramdas 2024) with a
+  fixed $\lambda$-grid and per-$\lambda$ Bonferroni. The two are
+  complementary: Wilson smoothing is tighter at the extremes
+  ($h \in \{0, n\}$), the betting CS is tighter in the interior of
+  $[0, 1]$. Taking the min recovers both regimes at the cost of a 2×
+  Bonferroni split.
 
-* **Bernstein** (``method="bernstein"``).
+  **Validity regime:** *adaptive* stopping (`epsilon_reached`
+  computed from the observed interval) and *adaptive* per-leaf sample
+  sizes — both true of ASIP. **This is the bound to cite for the
+  default `(1 - \delta)`-certificate.**
+
+* **Bernstein** (`method="bernstein"`).
   Classical Bernstein on the total estimator variance $\hat V_T$ and
   per-contribution bound $B = \max_\pi \hat w_\pi$:
 
   $$
-  \varepsilon_{\text{stat}}(T) \;=\; \sqrt{2 \hat V_T \log(2/\delta)} + \tfrac{B}{3} \log(2/\delta).
+  \varepsilon_{\text{stat}}(T) \;=\; \sqrt{2 \hat V_T \log(2/\delta_{\text{stat}})} + \tfrac{B}{3} \log(2/\delta_{\text{stat}}).
   $$
 
-  **Validity regime:** fixed-$n$ per leaf. Conservative; soundness-
-  only.
+  Conservative; soundness-only.
 
-* **Maurer-Pontil empirical-Bernstein** (``method="empirical-bernstein"``).
-  Per leaf, with $\hat V_\pi = \tilde p_\pi(1-\tilde p_\pi)$:
+* **Maurer-Pontil empirical-Bernstein** (`method="empirical-bernstein"`).
+  Per leaf, with $\hat V_\pi = \tilde p_\pi(1 - \tilde p_\pi)$ the
+  Wilson-smoothed empirical variance:
 
   $$
   \varepsilon_{\text{stat}}(T)
@@ -392,47 +528,15 @@ tightness and validity regime.
   \right]
   $$
 
-  with Bonferroni $\delta_K = \delta / K_T$. **Validity regime:**
-  fixed-$n$. Tighter than Bernstein when empirical variance is small.
+  with Bonferroni $\delta_K = \delta_{\text{stat}} / K_T$. **Validity
+  regime:** fixed-$n$. Tighter than Bernstein when empirical variance
+  is small.
 
-Implementation: [`compute_estimator_state`](../src/dise/estimator/__init__.py).
-For ATVA-grade certificates under the adaptive ASIP schedule, use
-``method="anytime"``.
-
-* **Wilson + Bonferroni** (default; `method="wilson"`).
-  Each open leaf gets confidence $1 - \delta/K$ via Wilson's score
-  interval:
-
-  $$
-  \varepsilon_{\text{stat}} \;=\; \sum_{\pi \in \Pi_{\text{open}}} \hat w_\pi \cdot
-  \mathrm{Wilson}(n_\pi, h_\pi, \delta/K).
-  $$
-
-* **Classical Bernstein** (`method="bernstein"`).
-  Use the total estimator variance $\hat V$ and a per-contribution
-  bound $B = \max_\pi w_\pi$:
-
-  $$
-  \varepsilon_{\text{stat}} \;=\;
-  \sqrt{2 \hat V \log(2/\delta)} + \tfrac{B}{3} \log(2/\delta).
-  $$
-
-* **Empirical-Bernstein (Maurer–Pontil 2009)** (`method="empirical-bernstein"`).
-  Per-leaf, with $\hat V_\pi = \tilde p_\pi(1-\tilde p_\pi)$ the
-  Wilson-smoothed empirical variance and $M = 1$ the per-sample range:
-
-  $$
-  \varepsilon_{\text{stat}}
-  \;=\; \sum_{\pi \in \Pi_{\text{open}}} \hat w_\pi \left[
-  \sqrt{\tfrac{2 \hat V_\pi \log(2/\delta_K)}{n_\pi}} + \tfrac{7 \log(2/\delta_K)}{3 (n_\pi - 1)}
-  \right],
-  $$
-
-  with Bonferroni $\delta_K = \delta / K$.
-
-Implementation: [`compute_estimator_state`](../src/dise/estimator/__init__.py).
-In practice the Wilson sum is tightest on Bernoulli leaves and is the
-default for the main results.
+Implementation: [`compute_estimator_state`](../src/dise/estimator/__init__.py)
+and [`betting_halfwidth_anytime`](../src/dise/estimator/__init__.py).
+For the headline benchmark comparisons (`docs/sota-comparison.md`)
+we use `method="anytime"` — DiSE beats the SoTA bounded-mean sampling
+baseline (betting CS) on 10 / 12 benchmarks at this setting.
 
 ## 8. Theorem 3 (closure correctness)
 
@@ -480,26 +584,79 @@ ASIPScheduler.run():
   \qquad \mathrm{cost} = k.
   $$
 
-* **Refine$(\pi, b)$.** Split $\pi$ on clause $b$. For each candidate
-  clause $b$ appearing in *some* observed path beyond depth $\pi$, the
-  expected variance reduction is estimated by partitioning the current
-  samples at $\pi$ according to whether they took $b$:
+* **Refine$(\pi, b)$.** Split $\pi$ on a clause $b$. The clause is
+  drawn from the *observed* paths beyond $\mathrm{depth}(\pi)$ and is
+  filtered by four guards (each documented in
+  [`_propose_actions`](../src/dise/scheduler/__init__.py) and
+  [`_best_refinement_clause`](../src/dise/scheduler/__init__.py)):
+
+  **Guard 1: not phi-uniform.** If every observed $\varphi$ at $\pi$
+  agrees, the leaf is a candidate for closure (Wilson-anytime test),
+  not refinement. Splitting a phi-uniform leaf produces children that
+  inherit the same all-agree statistics and merely consumes
+  Bonferroni budget per child — strictly hurts the certified
+  half-width.
+
+  **Guard 2: budget-aware leaf cap.** Under
+  $\varepsilon_{\text{close}}$-sound closure each closed leaf needs
+  roughly $\log(1/\delta_{\text{close}}) / \varepsilon_{\text{close}}^2$
+  samples. With sample budget $B$ this allows at most
+  $K_{\max\text{-leaves}} = B / n_{\text{close-per-leaf}}$ leaves
+  before the sample budget is exhausted by seed allocations. The
+  scheduler refuses to refine when $|\Pi_t| \ge K_{\max\text{-leaves}}$.
+
+  **Guard 3: variance-reduction floor.** Among candidate clauses, only
+  those with
+  $G(b) \ge 0.25 \cdot V_\pi$ are considered — refinements that drop
+  the parent's variance by less than 25 % rarely pay off after
+  Bonferroni inflation.
+
+  **Guard 4: predicted-bound gate.** Even for a clause that clears
+  guards 1–3, refinement is rejected unless the *predicted post-
+  refinement* contribution to $\varepsilon_{\text{stat}}$ is strictly
+  tighter than the *no-refinement* contribution at the same total
+  budget:
 
   $$
-  G(b) \;=\; V_\pi \;-\;\big(V_{\pi \wedge b} + V_{\pi \wedge \neg b}\big),
+  \sum_{c \in \{b, \neg b\}} \hat w_{\pi \wedge c}^{\text{future}} \cdot
+  \min(\text{Wilson}_{\text{anytime}}, \text{Betting})(n_c^{\text{future}}, h_c^{\text{future}}, \delta_{\text{inner}}^{(K+1)})
+  \;<\; \hat w_\pi \cdot \min(\cdots)(n^{\text{future}}, h^{\text{future}}, \delta_{\text{inner}}^{(K)}).
   $$
 
-  with per-side variances using Wilson-smoothed $\tilde p$ and the
-  empirical split fraction. Cost is `refinement_cost_in_samples`
-  (default $1$ — refinement involves two SMT calls). The clause
-  maximizing $G$ is chosen; ties fall back to "first divergent
-  position" (see [`_best_refinement_clause`](../src/dise/scheduler/__init__.py)).
+  Here $n^{\text{future}}, h^{\text{future}}$ extrapolate the current
+  empirical $h/n$ over all remaining budget. The gate captures the
+  Bonferroni-vs-sample-size tradeoff: a child gets $1/2$ of the
+  parent's future samples but pays a $\delta/(K+1)$ Bonferroni budget
+  instead of $\delta/K$. The per-leaf half-width only shrinks by
+  $\sqrt{\log(K)/(2 \log(K+1))}$, which is not enough to break even
+  unless the clause is *highly informative* (at least one child near
+  phi-uniform).
+
+  Among the surviving candidates, the clause maximizing the
+  variance-reduction gain
+  $G(b) = V_\pi - (V_{\pi \wedge b} + V_{\pi \wedge \neg b})$ is
+  chosen, with per-side variances using Wilson-smoothed $\tilde p$ and
+  the empirical split fraction. Cost is
+  `refinement_cost_in_samples` (default $1$ — refinement involves two
+  SMT calls plus a mass-MC split).
+
+  Implementation: [`_best_refinement_clause`](../src/dise/scheduler/__init__.py),
+  [`_predicted_no_refine_halfwidth`](../src/dise/scheduler/__init__.py),
+  [`_predicted_refine_halfwidth`](../src/dise/scheduler/__init__.py).
+
+  **Known limitation.** The predicted-bound gate uses the *empirical*
+  per-side $h/n$ to project future statistics. On the chosen clause's
+  empirically-uniform side, this is biased low — the clause picker
+  maximizes apparent uniformity. A Wilson-upper-bound debiasing
+  over-suppresses refinements where the structural uniformity is
+  real (e.g. `coin_machine`'s `x < 10` branch); a more principled
+  debiasing (Bayesian posterior on per-side $\mu$) is a follow-up.
 
 ### 9.2 Termination
 
 | `terminated_reason`       | condition                                                              |
 |---------------------------|------------------------------------------------------------------------|
-| `epsilon_reached`         | $\varepsilon_{\text{stat}} + W_{\text{open}} \le \varepsilon$ (**primary** stopping condition) |
+| `epsilon_reached`         | $\varepsilon_{\text{stat}} + \varepsilon_{\text{mass}} + W_{\text{close}} \le \varepsilon$ (**primary** stopping condition) |
 | `budget_exhausted`        | `samples_used >= budget_samples` (optional; pass `budget_samples=None` to disable) |
 | `time_exhausted`          | wall-clock exceeded `budget_seconds` (optional; default `None`)        |
 | `no_actions_available`    | every candidate has gain-per-cost $\le$ `min_gain_per_cost`            |
@@ -537,12 +694,15 @@ estimator-state computation.
 
 ## 11. Anytime semantics
 
-Because $\hat\mu$, $\varepsilon_{\text{stat}}$, and $W_{\text{open}}$
-are maintained incrementally, every iteration's :class:`EstimatorState`
-is a valid certified interval. The reported `terminated_reason`
-distinguishes the four exit conditions above; in every case the
-returned interval is *honest* about residual uncertainty — wide when
-the budget runs out, exact `[mu, mu]` when the frontier fully closes.
+Because $\hat\mu$, $\varepsilon_{\text{stat}}$,
+$\varepsilon_{\text{mass}}$ and $W_{\text{close}}$ are all maintained
+incrementally, every iteration's `EstimatorState` is a valid certified
+interval. The reported `terminated_reason` distinguishes the four
+exit conditions above; in every case the returned interval is *honest*
+about residual uncertainty — wide when the budget runs out, exact
+`[mu, mu]` when the frontier fully closes via SMT (and only as tight
+as $W_{\text{close}}$ allows when all closures fall back to the
+concentration path).
 
 Honesty about uncertainty is the verification claim.
 
@@ -670,32 +830,53 @@ b}$ is computed from a *separate* IS batch from the parent
 (``Frontier._proportional_split_mass``). The split-mass variance is
 folded into ``w_var`` and propagates through Theorem 1.
 
-**Residual closure bias.** When the SMT shortcut returns ``unknown``
-and the scheduler closes a leaf based on $n_{\min}$ agreeing samples
-alone, the closure may be wrong. The residual bias on $\mu_\pi$ is
-bounded by
+**Residual closure budget (sound).** When the SMT shortcut returns
+``unknown`` and the scheduler closes a leaf via the concentration
+path (§6.3), the residual disagreement rate $q_\pi$ is bounded by
+$\mathrm{Wilson}_{\text{anytime}}(n_\pi, 0, \delta_{\text{close}})$
+with probability $\ge 1 - \delta_{\text{close}}$ — the Wilson-anytime
+guarantee on a zero-count Bernoulli stream. The closure rule only
+fires when this bound is at most $\varepsilon_{\text{close}}$, so the
+*residual error* the algorithm carries forward is at most
+$\hat w_\pi \cdot \varepsilon_{\text{close}}$ per closed leaf — and
+this is precisely the contribution to $W_{\text{close}}$ that the
+certified half-width accounts for in §1 and §7.
 
-$$
-\big|\hat\mu_\pi - \mu_\pi\big| \;\le\; q_\pi \cdot (1 - q_\pi)^{n_{\min}} \cdot \mathbf{1}\!\big[\text{minority path exists}\big]
-$$
+In contrast to the pre-revision behavior (where MockBackend +
+all-agree-heuristic closure could attribute exact mass without a
+matching budget entry), the current rule is **sound under
+MockBackend**: any leaf the algorithm closes through the
+concentration path pays $\hat w_\pi \cdot \varepsilon_{\text{close}}$
+into $W_{\text{close}}$, which appears in the certified interval. The
+3-seed coverage check on the registered benchmarks reports
+$\text{coverage} = 1.0$ on every benchmark for every method including
+DiSE — no soundness failures observed.
 
-where $q_\pi$ is the minority-path mass within $R_\pi$. For practical
-$n_{\min} \ge 5$ and $q_\pi \ge 0.05$, this is $\le 0.04$; at
-$n_{\min} = 20$ it falls below $10^{-4}$. The contribution to the
-total bias is $\sum_{\pi \text{ closed via fallback}} w_\pi \cdot
-(\text{residual})$, which is *not* covered by the $\delta$ confidence
-budget — review-grade certificates should set ``backend="z3"`` so the
-SMT shortcut succeeds (Theorem 3) and the residual bias is zero.
+The empirical comparison
+([`sota-comparison.md`](sota-comparison.md)) at the recommended
+defaults ($\delta_{\text{close}} = 0.005$,
+$\varepsilon_{\text{close}} = 0.025$,
+$n_{\text{mass-samples}} = 10\,000$) shows DiSE producing tighter
+certified half-widths than the SoTA Hedged-Capital betting CS
+(Waudby-Smith & Ramdas 2024) on 10 out of 12 benchmarks while
+remaining sound on all 12.
 
 ### 13.5 Summary
 
 The certification claim at level $1 - \delta$ holds when:
 
-1. ``method="anytime"`` is used (§13.1, §13.2);
-2. ``max_refinement_depth`` is enforced (§13.3);
-3. The SMT backend is sound, *and* either the path-determinism
-   shortcut fires on every closure (under Z3) or the residual-bias
-   budget of §13.4 is acceptable to the reviewer.
+1. `method="anytime"` is used (§13.1, §13.2);
+2. `max_refinement_depth` is enforced (§13.3);
+3. The SMT backend is sound (§13.4); the concentration closure path
+   under MockBackend is itself sound at level $\delta_{\text{close}}$
+   per leaf (charged to $W_{\text{close}}$) — no separate Z3
+   requirement.
+
+The three inner confidence budgets
+$(\delta_{\text{stat}}, \delta_{\text{mass}}, \delta_{\text{close}})$
+sum (with Bonferroni over closed leaves) to the user-supplied
+$\delta$. Default partition: $\delta_{\text{stat}} = \delta_{\text{mass}}
+= 0.45 \delta$, $\delta_{\text{close}} = 0.10 \delta / K_{\text{close-max}}$.
 
 Conditions (1)–(3) collectively give an *anytime-valid* certified
 interval that survives the four adaptive-bias risks listed above.
