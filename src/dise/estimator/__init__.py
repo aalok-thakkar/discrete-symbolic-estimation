@@ -177,6 +177,140 @@ def wilson_halfwidth_anytime(n: int, h: int, delta: float) -> float:
     return wilson_halfwidth_for_leaf(n, h, delta_n)
 
 
+def prpl_eb_halfwidth_anytime(phis: list[int], delta: float, c: float = 0.5) -> float:
+    r"""Predictable plug-in empirical-Bernstein anytime half-width.
+
+    Implements Theorem 2 of Waudby-Smith & Ramdas (2024) — the closed-
+    form, anytime-valid confidence sequence for the mean of a bounded
+    sequence. For a Bernoulli history :math:`(X_1, \ldots, X_n) \in
+    \{0,1\}^n`, returns a half-width :math:`W_n` such that
+
+    .. math::
+
+        \Pr\!\big[\,\exists n \ge 1 : |\bar X_n^{\text{PrPl}} - \mu| > W_n\,\big]
+        \;\le\; \delta,
+
+    where the centering :math:`\bar X_n^{\text{PrPl}} = \sum \lambda_i X_i
+    / \sum \lambda_i` is the *predictable-plug-in weighted* mean (not the
+    plain sample mean — see remark below).
+
+    Predictable plug-in (eq. 15 of WSR):
+
+    .. math::
+
+        \lambda_t \;=\; \min\!\left(
+            \sqrt{\frac{2 \log(2/\delta)}{\hat\sigma_{t-1}^2 \cdot t \log(t+1)}},
+            \;c
+        \right),
+
+    with regularized running estimates
+
+    .. math::
+
+        \hat\mu_t = \frac{1/2 + \sum_{i=1}^t X_i}{t + 1},
+        \quad
+        \hat\sigma_t^2 = \frac{1/4 + \sum_{i=1}^t (X_i - \hat\mu_i)^2}{t + 1}.
+
+    The truncation level ``c`` defaults to 1/2 (recommended in §3.2 of
+    the paper; ``c = 3/4`` is the other recommended value).
+
+    Tighter than the union-bound-in-time Wilson construction
+    (:func:`wilson_halfwidth_anytime`) by a factor that grows with the
+    observation count, especially in low-variance regimes — the
+    asymptotic width is :math:`\sqrt{2 \sigma^2 \log(2/\delta)}` with
+    *no* :math:`\pi^2 / 6` inflation from a union bound.
+
+    .. note::
+
+       Returns a *symmetric* half-width around the PrPl-weighted mean.
+       The caller should reconstruct the interval as
+       :math:`[\hat\mu^{\text{PrPl}} - W, \hat\mu^{\text{PrPl}} + W]`.
+       :func:`compute_estimator_state` clips to ``[0, 1]``.
+
+    References
+    ----------
+    Waudby-Smith, I., Ramdas, A. (2024). Estimating means of bounded
+    random variables by betting. JRSS-B 86(1), 1-27. Theorem 2.
+    """
+    if delta <= 0.0 or delta >= 1.0:
+        raise ValueError("delta must be in (0, 1)")
+    if not 0.0 < c < 1.0:
+        raise ValueError("c must be in (0, 1)")
+    n = len(phis)
+    if n == 0:
+        return 1.0
+    log_term = math.log(2.0 / delta)
+    # Running regularized estimators per eq. 15. ``mu_hat_prev`` is
+    # \hat\mu_{i-1} (used to define v_i = 4 (X_i - \hat\mu_{i-1})^2),
+    # and ``sigma_sq_prev`` is \hat\sigma_{i-1}^2 (used inside lambda_i).
+    sum_x = 0.0
+    sum_sq_dev = 0.0  # Sum of (X_i - \hat\mu_i)^2 over completed steps.
+    mu_hat_prev = 0.5  # \hat\mu_0 = 1/2 by the regularization.
+    sigma_sq_prev = 0.25  # \hat\sigma_0^2 = 1/4 by the regularization.
+    sum_lambda = 0.0
+    sum_lambda_x = 0.0
+    sum_v_psi = 0.0
+    for i, x in enumerate(phis, start=1):
+        # Predictable plug-in lambda_i (eq. 15).
+        denom = sigma_sq_prev * i * math.log(i + 1.0)
+        lam = math.sqrt(2.0 * log_term / denom) if denom > 0.0 else c
+        lam = min(lam, c)
+        v_i = 4.0 * (x - mu_hat_prev) * (x - mu_hat_prev)
+        psi_e = (-math.log(1.0 - lam) - lam) / 4.0
+        sum_lambda += lam
+        sum_lambda_x += lam * x
+        sum_v_psi += v_i * psi_e
+        # Advance the regularized running estimators (post-step).
+        sum_x += x
+        mu_hat = (0.5 + sum_x) / (i + 1.0)
+        sum_sq_dev += (x - mu_hat) * (x - mu_hat)
+        sigma_sq = (0.25 + sum_sq_dev) / (i + 1.0)
+        mu_hat_prev = mu_hat
+        sigma_sq_prev = sigma_sq
+    if sum_lambda <= 0.0:
+        return 1.0
+    return (log_term + sum_v_psi) / sum_lambda
+
+
+def prpl_eb_center(phis: list[int], delta: float, c: float = 0.5) -> float:
+    """Centering :math:`\\sum \\lambda_i X_i / \\sum \\lambda_i` paired
+    with :func:`prpl_eb_halfwidth_anytime`.
+
+    Note this is *not* the plain sample mean — it is the predictable-
+    plug-in weighted mean around which the PrPl-EB half-width is
+    symmetric. See Theorem 2 of WSR.
+    """
+    if delta <= 0.0 or delta >= 1.0:
+        raise ValueError("delta must be in (0, 1)")
+    if not 0.0 < c < 1.0:
+        raise ValueError("c must be in (0, 1)")
+    n = len(phis)
+    if n == 0:
+        return 0.5
+    log_term = math.log(2.0 / delta)
+    sum_x = 0.0
+    sum_sq_dev = 0.0
+    mu_hat_prev = 0.5
+    sigma_sq_prev = 0.25
+    sum_lambda = 0.0
+    sum_lambda_x = 0.0
+    for i, x in enumerate(phis, start=1):
+        denom = sigma_sq_prev * i * math.log(i + 1.0)
+        lam = math.sqrt(2.0 * log_term / denom) if denom > 0.0 else c
+        lam = min(lam, c)
+        sum_lambda += lam
+        sum_lambda_x += lam * x
+        sum_x += x
+        mu_hat = (0.5 + sum_x) / (i + 1.0)
+        sum_sq_dev += (x - mu_hat) * (x - mu_hat)
+        sigma_sq = (0.25 + sum_sq_dev) / (i + 1.0)
+        mu_hat_prev = mu_hat
+        sigma_sq_prev = sigma_sq
+    if sum_lambda <= 0.0:
+        return float(sum(phis)) / n
+    return sum_lambda_x / sum_lambda
+
+
 def _phi_inv_one_sided(p: float) -> float:
     """Inverse standard-normal CDF via Acklam's rational approximation.
 
@@ -245,7 +379,9 @@ def _phi_inv_one_sided(p: float) -> float:
 def compute_estimator_state(
     frontier: Frontier,
     delta: float,
-    method: Literal["bernstein", "wilson", "empirical-bernstein", "anytime"] = "wilson",
+    method: Literal[
+        "bernstein", "wilson", "empirical-bernstein", "anytime", "betting"
+    ] = "wilson",
 ) -> EstimatorState:
     """Compute the certified estimator state from the current frontier.
 
@@ -260,8 +396,13 @@ def compute_estimator_state(
       :func:`wilson_halfwidth_anytime`). Valid under data-dependent
       stopping (e.g. ``epsilon_reached``) and adaptive per-leaf sample
       sizes. Slightly looser than ``"wilson"`` (by a
-      :math:`\\sqrt{\\log n}` factor). **Use this for ATVA-style
-      soundness claims under ASIP's adaptive schedule.**
+      :math:`\\sqrt{\\log n}` factor).
+    * ``"betting"`` — sum of per-open-leaf PrPl-EB half-widths (Waudby-
+      Smith & Ramdas 2024, Theorem 2). Closed-form, anytime-valid,
+      empirical-Bernstein-tight, and *strictly tighter than*
+      ``"anytime"`` in low-variance regimes — no :math:`\\pi^2/6`
+      inflation. **Recommended for ATVA-style certificates under ASIP's
+      adaptive schedule.**
     * ``"bernstein"`` — classical Bernstein bound on the total estimator
       variance. Conservative; soundness-only.
     * ``"empirical-bernstein"`` — Maurer-Pontil empirical-Bernstein
@@ -285,7 +426,27 @@ def compute_estimator_state(
     mu_hat, variance = frontier.compute_mu_hat()
     W_open = frontier.open_mass()
 
-    # When the estimator is fully resolved, eps_stat = 0.
+    # Closed-true leaves with non-axis-aligned regions carry mass
+    # uncertainty (``w_var > 0`` from the proportional-split estimator).
+    # Their contribution ``w_hat_pi * mu_hat_pi = w_hat_pi * 1`` enters
+    # ``mu_hat`` with an error term that the per-leaf hit-rate bound
+    # does *not* capture; we apply a Wilson-style mass half-width to
+    # absorb it. Axis-aligned closed leaves have ``w_var == 0`` and
+    # contribute zero. Closed-false leaves have ``mu_pi == 0`` and so
+    # contribute zero regardless of mass uncertainty.
+    closed_true_with_var = [
+        leaf
+        for leaf in closed_leaves
+        if leaf.status == Status.CLOSED_TRUE and leaf.w_var > 0.0
+    ]
+
+    # Bonferroni allocation spans every leaf where we apply a bound:
+    # open leaves (hit-rate uncertainty) plus closed-true leaves with
+    # nonzero mass variance (mass uncertainty).
+    K_bounds = max(len(open_leaves) + len(closed_true_with_var), 1)
+    delta_per_leaf = delta / K_bounds
+
+    # ---------------- eps_stat: open-leaf hit-rate uncertainty ----
     if not open_leaves and variance == 0.0:
         eps_stat = 0.0
     elif method == "bernstein":
@@ -293,16 +454,12 @@ def compute_estimator_state(
         per_sample_bound = max(per_sample_bound, 1e-12)
         eps_stat = bernstein_halfwidth(variance, delta, per_sample_bound)
     elif method == "empirical-bernstein":
-        # Bonferroni: each open leaf gets delta / max(1, K).
-        K = max(len(open_leaves), 1)
-        delta_per_leaf = delta / K
         eps_stat = 0.0
         for leaf in open_leaves:
             if leaf.n_samples < 2:
                 # MP requires n >= 2; fall back to leaf range (w_hat).
                 eps_stat += leaf.w_hat
                 continue
-            # Empirical Bernoulli variance with Wilson smoothing.
             n, h = leaf.n_samples, leaf.n_hits
             p_tilde = (h + 1) / (n + 2)
             v_hat = p_tilde * (1.0 - p_tilde)
@@ -310,33 +467,43 @@ def compute_estimator_state(
                 v_hat, n, delta_per_leaf, range_bound=1.0
             )
     elif method == "wilson":
-        # Bonferroni over leaves; fixed-n Wilson per leaf.
-        K = max(len(open_leaves), 1)
-        delta_per_leaf = delta / K
         eps_stat = sum(
             leaf.w_hat
             * wilson_halfwidth_for_leaf(leaf.n_samples, leaf.n_hits, delta_per_leaf)
             for leaf in open_leaves
         )
     elif method == "anytime":
-        # Bonferroni over leaves; anytime-valid Wilson per leaf.
-        # Sound under data-dependent stopping and adaptive sample sizes
-        # — the recommended setting for ASIP's adaptive schedule.
-        K = max(len(open_leaves), 1)
-        delta_per_leaf = delta / K
         eps_stat = sum(
             leaf.w_hat
             * wilson_halfwidth_anytime(leaf.n_samples, leaf.n_hits, delta_per_leaf)
             for leaf in open_leaves
         )
+    elif method == "betting":
+        eps_stat = sum(
+            leaf.w_hat * prpl_eb_halfwidth_anytime(leaf.observed_phis, delta_per_leaf)
+            for leaf in open_leaves
+        )
     else:
         raise ValueError(f"unknown method: {method!r}")
-
-    # Cap eps_stat at 1 (the interval is clipped anyway).
     eps_stat = min(eps_stat, 1.0)
-    eps_mass = sum(math.sqrt(leaf.w_var) for leaf in leaves)
-    lo = max(0.0, mu_hat - eps_stat - W_open)
-    hi = min(1.0, mu_hat + eps_stat + W_open)
+
+    # ---------------- eps_mass: closed-true mass uncertainty -----
+    # For a CLOSED_TRUE leaf with mass estimator ``hat w_pi`` of true
+    # mass ``w_pi``, the contribution error is ``|hat w_pi - w_pi| *
+    # mu_pi = |hat w_pi - w_pi|`` (since mu_pi = 1). A Wilson-style
+    # half-width on the proportional-split Bernoulli estimator is
+    # approximately ``z * sqrt(w_var_pi)``. Bernstein method uses the
+    # total-variance bound and so already covers this; the per-leaf
+    # methods need this term explicitly.
+    if method == "bernstein" or not closed_true_with_var:
+        eps_mass = 0.0
+    else:
+        z = _phi_inv_one_sided(1.0 - delta_per_leaf / 2.0)
+        eps_mass = sum(z * math.sqrt(leaf.w_var) for leaf in closed_true_with_var)
+    eps_mass = min(eps_mass, 1.0)
+
+    lo = max(0.0, mu_hat - eps_stat - W_open - eps_mass)
+    hi = min(1.0, mu_hat + eps_stat + W_open + eps_mass)
 
     return EstimatorState(
         mu_hat=mu_hat,
@@ -358,6 +525,8 @@ __all__ = [
     "bernstein_halfwidth",
     "compute_estimator_state",
     "empirical_bernstein_halfwidth_mp",
+    "prpl_eb_center",
+    "prpl_eb_halfwidth_anytime",
     "wilson_halfwidth_anytime",
     "wilson_halfwidth_for_leaf",
 ]

@@ -229,6 +229,53 @@ def test_try_close_below_min_samples(backend, small_uniform_dist) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Closure under SMT-only semantics — no sample-based fallback
+# ---------------------------------------------------------------------------
+
+
+class _ForceUnknownBackend(MockBackend):
+    """Adapter that forces :meth:`is_satisfiable` to return ``"unknown"``."""
+
+    def is_satisfiable(self, formula, timeout_ms: int = 5000):  # type: ignore[override]
+        return "unknown"
+
+
+class _ForceSatBackend(MockBackend):
+    """Adapter that forces :meth:`is_satisfiable` to return ``"sat"``."""
+
+    def is_satisfiable(self, formula, timeout_ms: int = 5000):  # type: ignore[override]
+        return "sat"
+
+
+def _seed_path_observations(f: Frontier, backend) -> None:
+    x = backend.make_int_var("x")
+    path = (backend.op("<=", x, backend.const(5)),)
+    for _ in range(5):
+        f.add_observation(f.root, ("c1",), 1, path_clauses=path)
+
+
+def test_try_close_refuses_on_unknown(small_uniform_dist) -> None:
+    """Backend returning ``"unknown"`` cannot certify closure — leaf
+    stays open (no sample-based fallback)."""
+    backend = _ForceUnknownBackend()
+    f = Frontier(small_uniform_dist, backend)
+    _seed_path_observations(f, backend)
+    closed = f.try_close(f.root, min_samples=5)
+    assert closed is False
+    assert f.root.status == Status.OPEN
+
+
+def test_try_close_refuses_on_sat(small_uniform_dist) -> None:
+    """Backend returning ``"sat"`` (counterexample) refuses closure."""
+    backend = _ForceSatBackend()
+    f = Frontier(small_uniform_dist, backend)
+    _seed_path_observations(f, backend)
+    closed = f.try_close(f.root, min_samples=5)
+    assert closed is False
+    assert f.root.status == Status.OPEN
+
+
+# ---------------------------------------------------------------------------
 # compute_mu_hat
 # ---------------------------------------------------------------------------
 

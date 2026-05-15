@@ -39,13 +39,18 @@ document is exhaustive: every regret is listed here.
   or a verified-mixing one.
 * **`MockBackend` path-determinism shortcut.** The closure rule's
   symbolic shortcut returns `"unknown"` for non-axis-aligned
-  arithmetic under `MockBackend`. The scheduler falls back to a
-  sample-based heuristic, which can close path-non-deterministic
+  arithmetic under `MockBackend`. By default the scheduler falls back
+  to a sample-based heuristic, which can close path-non-deterministic
   leaves prematurely (≈ 1 % bias on hard benchmarks). Using
-  `Z3Backend` resolves this. The certified-interval *correctness*
-  claim at $1 - \delta$ requires `is_satisfiable` to be sound (which
-  both backends guarantee) **and** closure to be symbolically
-  validated (which only Z3 provides for arithmetic).
+  `Z3Backend` resolves this. Pass `strict_unknown=True` to
+  :func:`dise.estimate` (or set it on :class:`SchedulerConfig`) to
+  *refuse* closure on `"unknown"` — the leaf stays open and contributes
+  to `W_open`, eliminating the bias at the cost of wider intervals on
+  programs whose closure cannot be symbolically verified. The
+  certified-interval *correctness* claim at $1 - \delta$ requires
+  `is_satisfiable` to be sound (which both backends guarantee) **and**
+  closure to be symbolically validated (which only Z3 provides for
+  arithmetic, **or** `strict_unknown=True` enforces structurally).
 * **Mass conservation on `GeneralRegion`s** — resolved. The
   proportional-split refinement (see [`algorithm.md`](algorithm.md) §5)
   guarantees children's masses sum to the parent's mass exactly,
@@ -120,9 +125,9 @@ practical cap unless you are willing to trust the target.
 5. **Machine-checked certificates.** Export $(F_\pi, n_\pi, h_\pi,
    \mathrm{path}_\pi, \hat\mu, \varepsilon_{\text{total}})$ tuples in
    a format consumable by a proof assistant.
-6. **Formal handling of `unknown`.** Right now `unknown` falls back
-   to sample-based closure; a strict variant would *refuse* to close
-   and accept the wider interval.
-7. **Continuous extensions.** A discretized continuous distribution
+6. **Continuous extensions.** A discretized continuous distribution
    with a discrete envelope; an interesting bridge to probabilistic
    verification on numerical programs.
+
+*Resolved (see § 3):* strict handling of `"unknown"` — opt-in via
+`strict_unknown=True` (default `False` preserves legacy behavior).

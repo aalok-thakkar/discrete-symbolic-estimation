@@ -228,9 +228,11 @@ def make_parser() -> argparse.ArgumentParser:
     pr.add_argument("--min-gain-per-cost", type=float, default=0.0,
                     help="diminishing-returns floor (default 0)")
     pr.add_argument("--method", type=str, default="wilson",
-                    choices=["wilson", "anytime", "bernstein", "empirical-bernstein"],
+                    choices=["wilson", "anytime", "betting",
+                             "bernstein", "empirical-bernstein"],
                     help="certified half-width construction (default 'wilson'; "
-                         "'anytime' for ATVA-grade soundness under adaptive stopping)")
+                         "'betting' for ATVA-grade soundness under adaptive "
+                         "stopping with the tightest available bounds)")
     pr.add_argument("--bootstrap", type=int, default=200)
     pr.add_argument("--batch-size", type=int, default=50)
     pr.add_argument("--seed", type=int, default=0)

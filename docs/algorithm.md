@@ -39,6 +39,49 @@ distributions over integer programs. Classes (D2) Bayes-net-structured
 joints and (D3) general discrete distributions are deferred (see
 [`limitations.md`](limitations.md)).
 
+### 1.2 The central decomposition (read this if you read nothing else)
+
+The two-term half-width $\varepsilon_{\text{stat}} + W_{\text{open}}$
+is **the** organizing object of the algorithm. Each term has a
+distinct driver, and every algorithmic decision DiSE makes is in
+service of shrinking one of them:
+
+| Term                              | What it measures                          | How DiSE shrinks it                |
+|-----------------------------------|-------------------------------------------|------------------------------------|
+| $\varepsilon_{\text{stat}}$       | sampling uncertainty on **open** leaves   | draw more concolic samples         |
+| $W_{\text{open}}$                 | total mass of unresolved (open) leaves    | SMT-refine an open leaf            |
+
+The scheduler chooses between *sample more* (drives
+$\varepsilon_{\text{stat}} \downarrow$) and *refine* (drives
+$W_{\text{open}} \downarrow$) at every step, picking whichever offers
+the better gain-per-cost on the *sum* (§9). Termination is
+$\varepsilon_{\text{stat}} + W_{\text{open}} \le \varepsilon$.
+
+Everything else in this document is in service of making the
+decomposition rigorous:
+
+* §2 defines the frontier whose leaves carry the
+  $(\hat w_\pi, \hat\mu_\pi)$ that build $\hat\mu$.
+* §3-§4 give the per-leaf variance ingredients that build
+  $\varepsilon_{\text{stat}}$.
+* §5 (mass-conservative refinement) is *what makes
+  $W_{\text{open}}$ a meaningful additive quantity* — children of a
+  leaf partition the parent's mass exactly.
+* §6 (closure) is the operation that *removes* a leaf from
+  $W_{\text{open}}$ entirely (it migrates from OPEN to CLOSED, so its
+  mass is exact and its hit-rate is symbolically certified).
+* §7 makes the central decomposition precise — Theorem 2 below — with
+  explicit assumptions, an anytime-valid statement, and a proof.
+* §13 verifies the decomposition survives ASIP's adaptive choices.
+
+The formula above is the *only* user-facing soundness contract: any
+implementation that maintains $\varepsilon_{\text{stat}}(t) +
+W_{\text{open}}(t) \le \varepsilon$ at the chosen stopping time, with
+the per-leaf bounds in $\varepsilon_{\text{stat}}$ derived from an
+anytime-valid construction (currently the predictable-plug-in
+empirical-Bernstein of Waudby-Smith & Ramdas 2024; see §7.4),
+satisfies the coverage guarantee.
+
 ### 1.1 Two framings: property-on-output vs. assertion-violation
 
 The general entry point [`dise.estimate(program, distribution, property_fn, ...)`](../src/dise/estimator/api.py)
@@ -220,9 +263,19 @@ observed path. By determinism, $\varphi(P(\cdot))$ is constant on
 $R_\pi$ — closure is **certified**.
 
 DiSE invokes the shortcut whenever raw path clauses are available
-(the scheduler always provides them). If the backend returns `unknown`
-— typical for `MockBackend` on non-axis-aligned arithmetic — closure
-falls back to the sample-based criterion per the brief.
+(the scheduler always provides them). The handling of `unknown` is
+configurable:
+
+* **Default** (`strict_unknown=False`): closure falls back to the
+  sample-based criterion per the brief. Required for `MockBackend`
+  usability on non-axis-aligned arithmetic; admits a ~1 % closure-bias
+  on hard programs.
+* **Strict** (`strict_unknown=True`): closure is *refused*. The leaf
+  stays OPEN and contributes to `W_open`, widening the certified
+  interval rather than risking bias. Recommended when the soundness
+  contract is more important than interval tightness, or when using
+  a backend whose `is_satisfiable` is known to be incomplete on the
+  workload.
 
 Implementation: [`Frontier.try_close`](../src/dise/regions/_frontier.py).
 
@@ -365,11 +418,31 @@ tightness and validity regime.
   \mathrm{Wilson}\!\Big(n_\pi(T), h_\pi(T), \tfrac{6\delta}{\pi^2 \, n_\pi^2(T) \, K_T}\Big).
   $$
 
-  **Validity regime:** *adaptive* stopping (``epsilon_reached``
-  computed from the observed interval) and *adaptive* per-leaf sample
-  sizes — both true of ASIP. **This is the bound to cite for
-  certificates under the actual algorithm.** Slightly looser than
-  ``"wilson"`` by a $\sqrt{\log n_\pi}$ factor.
+  **Validity regime:** *adaptive* stopping and *adaptive* per-leaf
+  sample sizes — both true of ASIP. Slightly looser than ``"wilson"``
+  by a $\sqrt{\log n_\pi}$ factor, plus the $\pi^2/6$ inflation from
+  the union-in-time.
+
+* **Predictable-plug-in empirical-Bernstein** (``method="betting"``).
+  Waudby-Smith & Ramdas (2024) Theorem 2 applied per leaf:
+
+  $$
+  W_\pi(T) \;=\; \frac{\log(2/\delta_K) + \sum_{i=1}^{n_\pi(T)} v_i \, \psi_E(\lambda_i)}{\sum_{i=1}^{n_\pi(T)} \lambda_i},
+  \quad
+  \varepsilon_{\text{stat}}(T) \;=\; \sum_{\pi \in \Pi_T^{\text{open}}} \hat w_\pi \cdot W_\pi(T),
+  $$
+
+  with $\psi_E(\lambda) = (-\log(1-\lambda) - \lambda)/4$,
+  $v_i = 4(X_i - \hat\mu_{i-1})^2$, predictable bet
+  $\lambda_t = \min\!\big(\sqrt{2\log(2/\delta_K) / (\hat\sigma_{t-1}^2 \cdot t \log(t+1))},\,c\big)$,
+  truncation $c \in (0,1)$ (default $1/2$), and Bonferroni
+  $\delta_K = \delta / K_T$.
+
+  **Validity regime:** identical to ``"anytime"`` (adaptive stopping +
+  adaptive per-leaf sample sizes) **but strictly tighter** in
+  low-variance regimes — no $\pi^2/6$ inflation, variance-adaptive,
+  closed-form. **This is the recommended setting for ATVA-grade
+  certificates under the actual ASIP schedule.**
 
 * **Bernstein** (``method="bernstein"``).
   Classical Bernstein on the total estimator variance $\hat V_T$ and
@@ -397,42 +470,8 @@ tightness and validity regime.
 
 Implementation: [`compute_estimator_state`](../src/dise/estimator/__init__.py).
 For ATVA-grade certificates under the adaptive ASIP schedule, use
-``method="anytime"``.
-
-* **Wilson + Bonferroni** (default; `method="wilson"`).
-  Each open leaf gets confidence $1 - \delta/K$ via Wilson's score
-  interval:
-
-  $$
-  \varepsilon_{\text{stat}} \;=\; \sum_{\pi \in \Pi_{\text{open}}} \hat w_\pi \cdot
-  \mathrm{Wilson}(n_\pi, h_\pi, \delta/K).
-  $$
-
-* **Classical Bernstein** (`method="bernstein"`).
-  Use the total estimator variance $\hat V$ and a per-contribution
-  bound $B = \max_\pi w_\pi$:
-
-  $$
-  \varepsilon_{\text{stat}} \;=\;
-  \sqrt{2 \hat V \log(2/\delta)} + \tfrac{B}{3} \log(2/\delta).
-  $$
-
-* **Empirical-Bernstein (Maurer–Pontil 2009)** (`method="empirical-bernstein"`).
-  Per-leaf, with $\hat V_\pi = \tilde p_\pi(1-\tilde p_\pi)$ the
-  Wilson-smoothed empirical variance and $M = 1$ the per-sample range:
-
-  $$
-  \varepsilon_{\text{stat}}
-  \;=\; \sum_{\pi \in \Pi_{\text{open}}} \hat w_\pi \left[
-  \sqrt{\tfrac{2 \hat V_\pi \log(2/\delta_K)}{n_\pi}} + \tfrac{7 \log(2/\delta_K)}{3 (n_\pi - 1)}
-  \right],
-  $$
-
-  with Bonferroni $\delta_K = \delta / K$.
-
-Implementation: [`compute_estimator_state`](../src/dise/estimator/__init__.py).
-In practice the Wilson sum is tightest on Bernoulli leaves and is the
-default for the main results.
+``method="betting"``; for fixed-$n$ runs with non-adaptive stopping,
+``method="wilson"`` is tightest.
 
 ## 8. Theorem 3 (closure correctness)
 

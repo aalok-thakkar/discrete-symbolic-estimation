@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added (Waudby-Smith & Ramdas betting half-width)
+
+- **``method="betting"``** on :func:`dise.estimate`,
+  :func:`dise.failure_probability`, :class:`SchedulerConfig`, and the
+  ``dise run`` CLI. Implements the predictable-plug-in
+  empirical-Bernstein (PrPl-EB) anytime-valid confidence sequence from
+  Waudby-Smith & Ramdas (2024) Theorem 2. Closed-form, variance-
+  adaptive, anytime-valid, and **strictly tighter than the existing
+  ``"anytime"`` Bonferroni-in-time Wilson construction** in
+  low-variance regimes — no :math:`\pi^2/6` inflation. Recommended
+  setting for ATVA-grade certificates under ASIP's adaptive schedule.
+- **``prpl_eb_halfwidth_anytime``** and **``prpl_eb_center``** in
+  :mod:`dise.estimator`. The half-width function consumes a Bernoulli
+  observation sequence (which the frontier already records per leaf as
+  ``observed_phis``).
+
+### Added (strict-unknown closure)
+
+- **`strict_unknown` knob** on :class:`SchedulerConfig`, :func:`dise.estimate`,
+  and :func:`dise.failure_probability`. When `True`, the closure rule
+  refuses to close a leaf whose symbolic path-determinism check returns
+  `"unknown"`; the leaf stays open and contributes to `W_open`. This is
+  the strict-soundness setting and eliminates the ~1 % closure-bias that
+  `MockBackend` and hard arithmetic can otherwise induce. Default `False`
+  preserves legacy behavior. Resolves item 6 of the previous open-extensions
+  list (`docs/limitations.md` §7).
+
 ### Added (project-wide audit-driven refactor)
 
 - **CLI**: ``dise run`` now accepts ``--method

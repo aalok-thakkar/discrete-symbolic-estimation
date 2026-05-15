@@ -68,7 +68,9 @@ def estimate(
     budget: int | None = 10_000,
     budget_seconds: float | None = None,
     min_gain_per_cost: float = 0.0,
-    method: Literal["wilson", "anytime", "bernstein", "empirical-bernstein"] = "wilson",
+    method: Literal[
+        "wilson", "anytime", "betting", "bernstein", "empirical-bernstein"
+    ] = "wilson",
     bootstrap: int = 200,
     batch_size: int = 50,
     seed: int = 0,
@@ -134,7 +136,9 @@ def estimate(
     max_refinement_depth:
         Maximum depth in the frontier tree (caps refinement recursion).
     closure_min_samples:
-        Minimum samples at a leaf before sample-based closure can fire.
+        Minimum samples at a leaf before the SMT closure-proof is
+        attempted. A cheap pre-filter; raising this reduces SMT calls
+        at the cost of slightly delayed closure.
     max_concolic_branches:
         Per-run cap on the number of branches the concolic tracer records.
 
@@ -202,7 +206,9 @@ def failure_probability(
     budget: int | None = None,
     budget_seconds: float | None = None,
     min_gain_per_cost: float = 0.0,
-    method: Literal["wilson", "anytime", "bernstein", "empirical-bernstein"] = "wilson",
+    method: Literal[
+        "wilson", "anytime", "betting", "bernstein", "empirical-bernstein"
+    ] = "wilson",
     bootstrap: int = 200,
     batch_size: int = 50,
     seed: int = 0,

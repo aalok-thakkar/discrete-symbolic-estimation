@@ -44,7 +44,7 @@ estimate(
     budget=10_000,           # None = unbounded sample cap
     budget_seconds=None,     # None = no wall-clock cap
     min_gain_per_cost=0.0,   # diminishing-returns floor
-    method="wilson",         # "wilson" | "anytime" | "bernstein" | "empirical-bernstein"
+    method="wilson",         # "wilson" | "anytime" | "betting" | "bernstein" | "empirical-bernstein"
     bootstrap=200,
     batch_size=50,
     seed=0,
@@ -52,12 +52,15 @@ estimate(
     verbose=False,
     max_refinement_depth=50,
     closure_min_samples=5,
+    strict_unknown=False,    # refuse to close on SMT "unknown" (strict soundness)
     max_concolic_branches=10_000,
 ) -> EstimationResult
 ```
 
 For ATVA-grade soundness under ASIP's adaptive stopping, use
-``method="anytime"``.
+``method="betting"`` (Waudby-Smith & Ramdas 2024 PrPl-EB — closed-form,
+anytime-valid, tightest available). ``method="anytime"`` (older
+union-bound-in-time Wilson) remains available for comparison.
 
 ### `failure_probability(program, distribution, *, catch=AssertionError, **kwargs) -> EstimationResult` ★
 
@@ -282,9 +285,14 @@ Aggregates the frontier into an :class:`EstimatorState`. Methods:
 
 * ``"wilson"`` (default) — Bonferroni-Wilson; tightest at fixed
   sample counts.
-* ``"anytime"`` — time-uniform Wilson via Bonferroni-in-time; sound
-  under ASIP's adaptive stopping (recommended for ATVA-grade
-  certificates).
+* ``"anytime"`` — time-uniform Wilson via Bonferroni-in-time
+  (Howard-Ramdas-McAuliffe-Sekhon 2021 style); sound under ASIP's
+  adaptive stopping.
+* ``"betting"`` — Waudby-Smith & Ramdas 2024 predictable-plug-in
+  empirical-Bernstein (PrPl-EB, Thm 2). Closed-form, anytime-valid,
+  variance-adaptive, **strictly tighter than ``"anytime"``** in
+  low-variance regimes (no :math:`\pi^2/6` inflation). Recommended for
+  ATVA-grade certificates.
 * ``"bernstein"`` — classical Bernstein on total estimator variance.
 * ``"empirical-bernstein"`` — Maurer–Pontil 2009.
 
@@ -298,6 +306,11 @@ Dataclass with ``mu_hat``, ``variance``, ``eps_stat``, ``eps_mass``,
 
 * ``wilson_halfwidth_for_leaf(n, h, delta)`` — fixed-n Wilson.
 * ``wilson_halfwidth_anytime(n, h, delta)`` — time-uniform Wilson.
+* ``prpl_eb_halfwidth_anytime(phis, delta, c=0.5)`` — PrPl-EB
+  anytime-valid half-width (WSR 2024 Thm 2). Takes the Bernoulli
+  observation sequence (used by ``method="betting"``).
+* ``prpl_eb_center(phis, delta, c=0.5)`` — PrPl-weighted center
+  paired with ``prpl_eb_halfwidth_anytime``.
 * ``bernstein_halfwidth(variance, delta, per_sample_bound=1.0)``.
 * ``empirical_bernstein_halfwidth_mp(empirical_variance, n, delta,
   range_bound=1.0)``.
@@ -321,6 +334,9 @@ Tuning knobs (see docstring for the four termination conditions):
 * ``refinement_cost_in_samples``, ``max_refinement_depth``
 * ``n_mass_samples`` — IS batch size for general-region mass
 * ``smt_timeout_ms``, ``closure_min_samples``, ``max_concolic_branches``
+* ``strict_unknown`` — when ``True``, refuse to close on SMT
+  ``"unknown"`` (the leaf stays open and contributes to ``W_open``).
+  Default ``False`` falls back to sample-based closure on ``"unknown"``.
 * ``verbose``
 
 ### `SchedulerResult`

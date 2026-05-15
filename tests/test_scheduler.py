@@ -57,7 +57,7 @@ def test_identity_with_property_converges(backend) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_branching_program_converges(backend) -> None:
+def test_branching_program_converges(backend, request) -> None:
     def prog(x, y):
         count = 0
         if x < 5:
@@ -78,8 +78,16 @@ def test_branching_program_converges(backend) -> None:
     result = s.run()
     truth = 1.0 - (6 / 10) * (6 / 10)  # 0.64
     lo, hi = result.final_estimator.interval
+    # Soundness is required for *every* backend.
     assert lo <= truth <= hi
-    assert (hi - lo) <= 0.15
+    # Tightness depends on the backend. Under strict (SMT-only)
+    # closure, MockBackend cannot certify path-determinism on
+    # multi-variable formulas, so leaves stay open and ``W_open``
+    # forces the trivial $[0, 1]$ interval. Z3 decides such formulas
+    # and produces the tight bound. We test tightness only with Z3.
+    backend_id = request.node.callspec.id
+    if backend_id == "z3":
+        assert (hi - lo) <= 0.15
 
 
 # ---------------------------------------------------------------------------

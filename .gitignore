@@ -28,3 +28,14 @@ coverage.xml
 # Benchmark / experiment outputs
 results/
 *.csv.tmp
+
+# Claude tooling — local to the editor session, not for the repo
+.claude/
+
+# LaTeX build artifacts (sources are tracked under paper/)
+*.aux
+*.log
+*.bbl
+*.blg
+*.out
+*.toc

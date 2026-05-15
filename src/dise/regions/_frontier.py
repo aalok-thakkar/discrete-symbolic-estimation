@@ -399,20 +399,25 @@ class Frontier:
     def try_close(self, node: FrontierNode, min_samples: int) -> bool:
         """Apply the closure rule.
 
-        A leaf is closed iff:
+        A leaf is closed iff *all four* conditions hold:
 
-        * ``n_samples >= min_samples``, AND
-        * all observed branch sequences are identical (path determinism
-          observed), AND
-        * all observed phi-values agree.
+        1. ``n_samples >= min_samples`` (filter: don't call SMT on a
+           single observation).
+        2. All observed branch sequences at the leaf are identical
+           (so there is one well-defined "observed path" to certify).
+        3. All observed :math:`\\varphi`-values agree (so closure is
+           CLOSED_TRUE vs CLOSED_FALSE is unambiguous).
+        4. **The SMT backend proves the region implies the observed
+           path** — concretely, ``is_satisfiable(F_pi ∧ ¬path)`` returns
+           ``"unsat"``. Returns ``"sat"`` or ``"unknown"`` → keep open.
 
-        Additionally, if raw path clauses are available, the SMT shortcut
-        from the brief is consulted: we verify that the leaf's region
-        implies the observed path (``F_pi AND NOT path`` is unsat). If
-        SMT returns ``sat`` (counterexample exists), closure is rejected
-        even though the sample-based criterion fired. If SMT returns
-        ``unknown`` (typical for the Mock backend or hard formulas), we
-        fall back to the sample-based decision per the brief.
+        Condition (4) is the only soundness-relevant check; (1)-(3) are
+        cheap pre-filters that avoid wasted SMT calls. There is **no
+        sample-based fallback**: a leaf the SMT backend cannot certify
+        stays open and contributes to ``W_open`` (the certified-interval
+        cushion). This is the trade-off — wider intervals on programs
+        whose closure is symbolically intractable, in exchange for a
+        clean one-line soundness story.
 
         Returns ``True`` if the node was closed.
         """
@@ -428,18 +433,21 @@ class Frontier:
         first_phi = node.observed_phis[0]
         if any(p != first_phi for p in node.observed_phis):
             return False
-        # SMT shortcut: verify the region implies the observed path.
-        if node.observed_paths and node.observed_paths[0]:
-            path_clauses = node.observed_paths[0]
-            path_formula = self.smt.conjunction(*path_clauses)
-            check = self.smt.conjunction(
-                node.region.formula, self.smt.negation(path_formula)
-            )
-            result = self.smt.is_satisfiable(check)
-            if result == "sat":
-                # Counterexample exists: region is not path-deterministic.
-                return False
-            # "unsat" → confirmed; "unknown" → fall back to sample-based.
+        # SMT closure proof — *required*. Empty path clauses are
+        # admissible: an observed run that recorded no branches has
+        # path formula ``True``, so the closure check
+        # ``F_pi ∧ ¬True ≡ F_pi ∧ False`` is trivially unsat. Any
+        # well-behaved backend reports ``unsat`` in that case.
+        path_clauses = node.observed_paths[0] if node.observed_paths else ()
+        path_formula = self.smt.conjunction(*path_clauses)
+        check = self.smt.conjunction(
+            node.region.formula, self.smt.negation(path_formula)
+        )
+        result = self.smt.is_satisfiable(check)
+        if result != "unsat":
+            # ``"sat"`` (counterexample) or ``"unknown"`` (backend can't
+            # decide) — neither certifies path-determinism. Keep open.
+            return False
         node.status = Status.CLOSED_TRUE if first_phi else Status.CLOSED_FALSE
         return True
 

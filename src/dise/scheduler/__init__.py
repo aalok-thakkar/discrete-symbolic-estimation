@@ -70,10 +70,14 @@ class SchedulerConfig:
     # backward-compatible behavior.
     min_gain_per_cost: float = 0.0
     # Certified half-width method (see ``compute_estimator_state``).
-    # ``"wilson"`` is tightest at fixed n; ``"anytime"`` is sound under
-    # the scheduler's adaptive stopping rule (recommended for ATVA-
-    # style certificates — see docs/algorithm.md §13).
-    method: Literal["wilson", "anytime", "bernstein", "empirical-bernstein"] = "wilson"
+    # ``"wilson"`` is tightest at fixed n. ``"anytime"`` is sound under
+    # the scheduler's adaptive stopping rule. ``"betting"`` is the WSR
+    # 2024 PrPl-EB variant — same adaptive-schedule soundness as
+    # ``"anytime"`` but tighter in low-variance regimes; the
+    # recommended setting for ATVA-style certificates.
+    method: Literal[
+        "wilson", "anytime", "betting", "bernstein", "empirical-bernstein"
+    ] = "wilson"
     bootstrap_samples: int = 200
     batch_size: int = 50
     refinement_cost_in_samples: float = 1.0
