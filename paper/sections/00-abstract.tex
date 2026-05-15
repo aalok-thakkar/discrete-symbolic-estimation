@@ -1,0 +1,39 @@
+\begin{abstract}
+  We study the problem of \emph{distribution-aware reliability
+    estimation}: given a deterministic program $\prog$, a discrete
+  distribution $\dist$ over its inputs, and a Boolean property
+  $\prop$, certify a confidence interval for
+  $\Pr_{x \sim \dist}[\prop(\prog(x)) = 1]$ using as few program
+  evaluations as possible.  The central difficulty is that
+  rare-event programs defeat plain sampling, while symbolic
+  techniques fail on programs with non-linear arithmetic or
+  unbounded loops.
+
+  We present \algname{} (\emph{Adaptive Symbolic Importance
+    Partitioning}), an algorithm that bridges the two regimes.
+  \algname{} maintains a frontier of path-condition regions and at
+  each step chooses between sampling and SMT-driven refinement under
+  a unified gain-per-cost criterion.  The certified half-width
+  decomposes as
+  $\Pr[|\muhat - \mutrue| \le \epsstat + \Wopen] \ge 1 - \delta$,
+  where $\epsstat$ aggregates per-region statistical uncertainty and
+  $\Wopen$ is the total probability mass of regions not yet
+  symbolically certified.  This decomposition is both the organising
+  principle of the algorithm and the content of its central
+  correctness theorem: every action reduces one term, and the
+  algorithm terminates when their sum falls below $\varepsilon$.
+
+  The per-region statistical bound uses the predictable-plug-in
+  empirical-Bernstein confidence sequence of Waudby-Smith and Ramdas
+  --- closed-form, variance-adaptive, and anytime-valid under
+  \algname{}'s data-dependent stopping.  The closure rule is
+  single-branch: a region is certified if and only if an SMT oracle
+  proves path-determinism, yielding a one-lemma soundness contract
+  with no sample-based fallback.
+
+  We implement \algname{} as \toolname{}, a Python prototype with a
+  Z3 backend, and evaluate it on $12$ integer benchmarks.  On
+  rare-event programs whose path structure aligns with the input
+  distribution, \toolname{} reduces sample counts by up to two orders
+  of magnitude compared with plain and stratified Monte Carlo.
+\end{abstract}

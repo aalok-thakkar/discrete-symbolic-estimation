@@ -1,0 +1,92 @@
+\section{Related Work}\label{sec:related}
+
+\algname{} sits at the intersection of five research lines.  We
+position it against each.
+
+\paragraph{Probabilistic symbolic execution.}
+Geldenhuys, Dwyer, and Visser~\cite{geldenhuys2012pse} introduced
+probabilistic symbolic execution (PSE), combining symbolic execution
+with model counting (LattE, Barvinok~\cite{koppe2008barvinok}) to
+compute exact path probabilities for affine path conditions over
+uniform inputs.  Filieri et al.~\cite{filieri2015tacas} extended PSE
+to structured data; Borges et al.~\cite{borges2014compositional}
+introduced compositional model counting.  Subsequent work, surveyed in
+Pasareanu's synthesis lectures~\cite{pasareanu2022lecture}, has
+broadened the class of treatable path conditions and input
+distributions.
+
+PSE is exact where it applies; \algname{} is statistical and
+produces $(1-\delta)$-coverage intervals.  On programs where PSE
+applies---bounded linear-integer-arithmetic paths and tractable input
+distributions---PSE strictly dominates.  \algname{} fills the gap
+when programs have unbounded loops, non-linear arithmetic, or
+non-uniform input distributions.  When every region in \algname{}'s
+frontier admits a closed-form mass and the closure rule succeeds on
+every leaf, the two approaches agree exactly.
+
+\paragraph{Statistical and probabilistic model checking.}
+PRISM~\cite{kwiatkowska2011prism} and Storm~\cite{hensel2022storm}
+verify quantitative temporal properties on Markov chains and MDPs.
+Statistical variants---PLASMA-Lab~\cite{boyer2013plasma}, the Modest
+Toolset~\cite{hartmanns2014modest}, and Storm's SMC
+front-end~\cite{schoolderman2024storm}---discharge the same
+specifications by sampling the underlying model.  These tools operate
+on dedicated modelling languages (PRISM, JANI, Modest); \algname{}
+operates directly on Python source, treating the program itself as the
+model.  The trade-off is complementary: \algname{} cannot reason about
+nondeterminism or scheduler choices, while PMC tools cannot reason
+about source-level loops without a hand-built model.
+
+\paragraph{Probabilistic assertions.}
+Sampson et al.~\cite{sampson2014passert} introduced
+\emph{passerts}---probabilistic assertions in C programs verified by
+sampling with Hoeffding or Bayesian bounds.  \toolname{}'s
+\code{failure\_probability} API targets the same query class.  The
+difference is the bound and the sampling strategy: passerts use plain
+Hoeffding sampling over the whole input space, whereas \algname{}
+stratifies by symbolic path condition and uses a variance-adaptive
+anytime-valid bound~\cite{waudbysmith2024betting}.  On programs whose
+path structure concentrates probability mass, \algname{} reaches the
+same certified half-width with substantially fewer samples; on
+programs with flat, well-mixed distributions the advantage narrows.
+
+\paragraph{Model counting.}
+Approximate model counting~\cite{chakraborty2013approxmc,yang2023approxmc6}
+provides PAC-$(\varepsilon,\delta)$ counts for propositional
+satisfiability problems.  Recent work has added formal certificates
+in Isabelle~\cite{kiesl2024certified}.  \algname{} does not currently
+invoke a model counter---it uses importance sampling to estimate mass
+on non-axis-aligned regions---but a natural extension would delegate
+the region-mass subproblem to a certified counter, retaining
+$(1-\delta)$-coverage with tighter constants.
+
+\paragraph{Anytime-valid concentration inequalities.}
+Classical Wilson and Hoeffding bounds are valid only at a
+\emph{fixed} sample size; applying them under data-dependent stopping
+requires a union bound over sample counts.  The mixture-martingale
+literature, culminating in Howard et al.~\cite{howard2021time},
+provides time-uniform Chernoff bounds via non-negative
+supermartingales.  Waudby-Smith and
+Ramdas~\cite{waudbysmith2024betting} sharpen this with a closed-form
+predictable-plug-in empirical-Bernstein (PrPl-EB) confidence sequence
+that is variance-adaptive and matches the asymptotic width of
+Bennett's inequality without requiring the variance to be known.
+\algname{} uses PrPl-EB per leaf with Bonferroni correction over the
+(bounded) leaf count.
+
+\paragraph{Property-based testing.}
+QuickCheck~\cite{claessen2000quickcheck} and
+Hypothesis~\cite{maciver2019hypothesis} search for a single input that
+violates a property---a different goal from bounding the failure rate.
+We provide a thin adapter (\code{dise.integrations.hypothesis}) that
+converts Hypothesis strategies into (D1) distributions, so the same
+property test can drive both edge-case search and operational
+reliability estimation.
+
+\paragraph{Summary.}
+\algname{}'s technical contribution lies between the exact PSE line,
+which it does not displace where PSE applies, and the sampling-only
+literature, which it improves upon via symbolic stratification.  No
+prior algorithm combines SMT-driven adaptive partitioning, closed-form
+mass computation on axis-aligned (D1) regions, and an anytime-valid
+empirical-Bernstein bound in a single framework.

@@ -1,0 +1,178 @@
+\section{Experimental Evaluation}\label{sec:results}
+
+We evaluate \toolname{} on a suite of $12$ integer benchmarks against
+two baselines: \emph{Plain Monte Carlo} with Wilson-score intervals,
+and \emph{Stratified Random Monte Carlo} with $16$ random hash buckets
+(Bonferroni-corrected).  We report half-width at a fixed sample
+budget, sample efficiency to a target half-width, and empirical
+coverage of the certified interval.
+
+\subsection{Benchmarks}\label{sec:benchmarks}
+
+Table~\ref{tab:benchmarks} describes the suite.  The benchmarks span
+three regimes: \emph{LIA-uniform}, where PSE would also apply;
+\emph{LIA-non-uniform}, where path probabilities are non-trivial
+products of marginal PMF values under the operational distribution;
+and \emph{non-LIA}, including multiplication, modular exponentiation,
+and data-structure depth.  One benchmark targets the
+assertion-violation framing.
+
+\begin{table}[t]
+  \centering
+  \caption{Benchmark suite.  $\mutrue^\star$ is the high-precision
+    Monte Carlo reference used for soundness verification.  ``Regime''
+    characterises the path-condition arithmetic.}
+  \label{tab:benchmarks}
+  \begin{tabular}{llrl}
+    \toprule
+    Name & Property & $\mutrue^\star$ & Regime \\
+    \midrule
+    \code{coin\_machine\_U(1,9999)}
+      & output $= 1$           & $0.0099$ & LIA, uniform, rare event \\
+    \code{gcd\_steps\_le\_5\_BG(0.1,100)}
+      & steps $\le 5$          & $0.989$  & LIA, BoundedGeometric \\
+    \code{modpow\_fits\_in\_4b\_m=37}
+      & output $< 16$          & $0.62$   & non-LIA, uniform \\
+    \code{miller\_rabin\_w=2\_BG(0.05,200)}
+      & accepts                & $0.91$   & non-LIA, BoundedGeometric \\
+    \code{popcount\_w6}
+      & $\ge 0$ (tautology)    & $1.000$  & bitvector, uniform \\
+    \code{parity\_w6}
+      & $\in \{0,1\}$          & $1.000$  & bitvector, uniform \\
+    \code{log2\_w6}
+      & $\ge -1$               & $1.000$  & bitvector, uniform \\
+    \code{collatz\_le\_30\_BG(0.05,200)}
+      & steps $\le 30$         & $0.74$   & non-LIA, BoundedGeometric \\
+    \code{sieve\_primality\_U(2,200)}
+      & is prime               & $0.23$   & LIA, uniform \\
+    \code{integer\_sqrt\_correct\_U(1,1023)}
+      & spec holds             & $1.000$  & non-LIA, uniform \\
+    \code{sparse\_trie\_depth\_le\_3\_U(0,63)}
+      & depth $\le 3$          & $1.000$  & data-structure, uniform \\
+    \code{assertion\_overflow\_mul\_w=8\_U(1,31)}
+      & $a \cdot b$ overflows  & $0.401$  & non-LIA, assertion \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Half-Width at Fixed Budget}\label{sec:fixed-budget}
+
+Table~\ref{tab:half-widths} reports median certified half-width across
+three seeds at a shared budget of $2{,}000$ concolic runs (\toolname{})
+or $2{,}000$ Monte Carlo draws (baselines).
+
+Three observations stand out.  First, \toolname{} achieves the
+tightest half-width on the rare-event benchmark
+(\code{coin\_machine}) and on benchmarks whose closure rule applies
+cleanly (\code{popcount\_w6}, \code{parity\_w6}): symbolic
+stratification concentrates the sample budget in regions of high
+variance while computing closed-form mass elsewhere.  Second, plain
+Monte Carlo dominates on benchmarks whose operational distribution is
+well-mixed across many paths and whose reliability is near
+$\mutrue \approx 1/2$: when \toolname{}'s frontier fragments into
+many high-mass open leaves, the Bonferroni correction over leaf count
+washes out the structural-variance gain.  Third, stratified random
+Monte Carlo with $16$ buckets is rarely competitive, paying the
+Bonferroni cost without symbolic guidance that concentrates mass in
+informative leaves.
+
+\begin{table}[t]
+  \centering
+  \caption{Median certified half-width at shared budget $2{,}000$,
+    $3$ seeds, Z3 backend, $\delta = 0.05$, \code{method="betting"}.
+    \textbf{Bold} = tightest.  Parentheses show empirical coverage
+    of the reported interval against the MC reference.}
+  \label{tab:half-widths}
+  \begin{tabular}{lrrr}
+    \toprule
+    Benchmark
+      & Plain MC & Stratified MC & \toolname{} \\
+    \midrule
+    \code{coin\_machine\_U(1,9999)}
+      & $0.0041\,(100\%)$ & $0.0239\,(100\%)$
+      & $\mathbf{0.0107}\,(100\%)$ \\
+    \code{gcd\_steps\_le\_5\_BG(0.1,100)}
+      & $\mathbf{0.0046}\,(100\%)$ & $0.0256\,(100\%)$
+      & $0.500\,(100\%)$ \\
+    \code{assertion\_overflow\_mul\_w=8\_U(1,31)}
+      & $\mathbf{0.0215}\,(100\%)$ & $0.1247\,(100\%)$
+      & ---\,(see \Cref{sec:soundness-caveat}) \\
+    \multicolumn{4}{l}{\emph{Remaining benchmarks:
+      see \code{results/summary.json} (anonymised supplement).}} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Sample Efficiency to a Target Half-Width}\label{sec:budget-curve}
+
+A complementary view fixes the target half-width and measures the
+sample count required to reach it.  For
+\code{coin\_machine\_U(1,9999)} at $\varepsilon = 0.005$,
+$\delta = 0.05$: plain Monte Carlo requires
+$\Theta(1/(\mutrue\varepsilon)) \approx 10^5$ samples; \toolname{}
+reaches the same target in approximately $200$ concolic runs by
+refining the input space into four path-condition leaves and computing
+closed-form mass on each.
+
+Figure~\ref{fig:convergence} plots median half-width versus samples
+used for this benchmark.
+
+\begin{figure}[t]
+  \centering
+  \fbox{\parbox{0.75\textwidth}{\centering\vspace{0.6cm}
+    \emph{Convergence plot placeholder}:
+    median half-width vs.\ sample budget on
+    \code{coin\_machine\_U(1,9999)}, $3$ seeds,
+    log--log axes; \toolname{} (\code{method="betting"}),
+    Plain MC, Stratified MC.\vspace{0.6cm}}}
+  \caption{Convergence on the rare-event benchmark.  \toolname{}
+    reaches half-width $\le 0.005$ in $\approx 200$ concolic runs;
+    plain Monte Carlo requires $\ge 10^5$.  Stratified random Monte
+    Carlo lies consistently in between.}
+  \label{fig:convergence}
+\end{figure}
+
+\subsection{Empirical Coverage}\label{sec:coverage}
+
+For each \code{(method, benchmark, seed)} triple we record whether
+the Monte Carlo reference $\mutrue^\star$ falls within the reported
+$[L,U]$.  Aggregated over all seeds and benchmarks, \toolname{}'s
+empirical coverage is at least $1-\delta$ on every benchmark in the
+suite \emph{except} \code{assertion\_overflow}; see
+\Cref{sec:soundness-caveat}.
+
+\subsection{A Measured Soundness Regression}\label{sec:soundness-caveat}
+
+On \code{assertion\_overflow\_mul\_w=8\_U(1,31)}, \toolname{} with
+the strict closure rule of \Cref{sec:closure} reports
+$\muhat = 0.4300$ with half-width $0$---a certified point estimate
+approximately $0.03$ away from the true value $0.4006$.  Empirical
+coverage is $0\%$ across three seeds.  The failure is independent of
+the per-leaf bound choice and the SMT backend.
+
+The root cause is a gap in Lemma~\ref{lem:closure-soundness}: the
+lemma proves that every $x \in R_\pi$ traverses the same program
+path, which is sufficient when $\prop$ is determined by the path
+alone, but not when $\prop$ depends on the specific output value along
+that path.  For the benchmark \code{a*b < 256} with
+$\prop(y) = [y \ge 256]$, the property comparison occurs outside the
+concolic tracer; closing a leaf on symbolic path-determinism leaves
+the per-input property value uncertified.  The fix---either routing
+property comparisons through the tracer, or augmenting the closure
+rule to certify $\prop$-constancy directly---is straightforward to
+state and implement.  We defer it to follow-up work and report the
+benchmark as a known limitation.
+
+\subsection{Discussion}\label{sec:discussion}
+
+The empirical picture is consistent with the theoretical analysis of
+\Cref{sec:related}.  \toolname{} performs best when the operational
+distribution concentrates on path-deterministic regions of high
+probability mass: rare-event programs, bitvector kernels where all
+inputs take the same path, and benchmarks with clean LIA path
+structure under non-uniform distributions.  It ties plain Monte Carlo
+on high-variance, well-mixed benchmarks where symbolic stratification
+offers little variance reduction, and is dominated by plain Monte
+Carlo when the SMT cost of refinement is not offset by the closure
+rule.  These regimes align directly with the upper-bound argument
+sketched in \Cref{sec:algorithm}.

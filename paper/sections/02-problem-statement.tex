@@ -1,0 +1,82 @@
+\section{Problem Statement}\label{sec:problem}
+
+Fix a probability space $(\Omega, \mathcal{F}, \mathbb{P})$ and a
+finite input domain $\inX \subseteq \mathbb{Z}^d$.  Throughout the
+paper we make the following assumption on the program.
+
+\begin{assumption*}\label{ass:program}
+  The program $\prog : \inX \to \inY$ is \emph{deterministic}: the
+  output $\prog(x)$ is determined entirely by the input $x$, with no
+  dependence on any internal source of randomness.  Programs that use
+  randomness must be wrapped to expose the random seed as an explicit
+  input.
+\end{assumption*}
+
+We consider input distributions drawn from the following class.
+
+\begin{definition}[Product-form discrete distributions, class (D1)]%
+  \label{def:d1}
+  A distribution $\dist$ over $\inX = \mathbb{Z}^d$ is in class
+  \emph{(D1)} if it factors as
+  $\dist(x_1, \ldots, x_d) = \prod_{i=1}^d \dist_i(x_i)$,
+  where each marginal $\dist_i$ has a closed-form cumulative
+  probability-mass function over integer intervals:
+  $\dist_i(\{a, \ldots, b\}) = \dist_i(b) - \dist_i(a-1)$.
+  Uniform, bounded geometric, categorical, truncated Poisson, and
+  finite Bernoulli mixtures all belong to (D1).
+\end{definition}
+
+The (D1) restriction is the source of \toolname{}'s central
+variance-reduction mechanism.  For any axis-aligned box
+$R = \prod_i [a_i, b_i]$, the probability
+$\Pr_\dist[X \in R] = \prod_i \dist_i(\{a_i, \ldots, b_i\})$ is
+available in closed form and carries \emph{zero estimation variance}.
+Bayes-net-structured and general discrete distributions fall outside
+this class and are left to future work (\Cref{sec:conclusion}).
+
+Let $\prop : \inY \to \{0,1\}$ be a Boolean output property.  The
+operational reliability $\mutrue \in [0,1]$ is defined as
+in~\eqref{eq:mu-def}.
+
+\paragraph{Problem definition.}
+Given $\prog$, $\dist \in \text{(D1)}$, $\prop$, a target half-width
+$\varepsilon \in (0,1]$, and a confidence parameter $\delta \in (0,1)$,
+produce an estimator $\muhat$ and a two-sided interval
+$[L,U] \subseteq [0,1]$ satisfying the \emph{soundness contract}
+\begin{equation}\label{eq:soundness-contract}
+  \mathbb{P}\!\big[\,L \le \mutrue \le U\,\big] \;\ge\; 1 - \delta,
+  \qquad
+  U - L \;\le\; 2\varepsilon,
+\end{equation}
+using as few evaluations of $\prog$ as possible.  The probability
+in~\eqref{eq:soundness-contract} is over the algorithm's internal
+randomness and the iid samples drawn from $\dist$; the true
+reliability $\mutrue$ is a fixed constant.
+
+\paragraph{Assertion-violation framing.}
+The output-property formulation~\eqref{eq:mu-def} subsumes the
+classical assertion-violation framing.  For a program annotated with
+an \code{assert} statement, the failure probability
+$\Pr_\dist[\prog\text{ raises }\mathsf{AssertionError}]$ is recovered
+by wrapping $\prog$ in a handler that converts the targeted exception
+into a Boolean failure flag and setting $\prop(y) = [y = 1]$.
+Worked examples of both framings appear in \Cref{sec:results}.
+
+\paragraph{Why the problem is hard.}
+\algname{} addresses three inherent difficulties, each of which is
+mitigated by a distinct component of its design.
+\begin{enumerate}
+\item \emph{Real-valued answer.}  Reliability is a measure, not a
+  predicate.  \algname{} maintains a fractional estimator over a
+  partition of $\inX$, accumulating evidence from both sampling and
+  symbolic reasoning.
+\item \emph{Rare events.}  When $\mutrue \approx 0$ or $\mutrue
+  \approx 1$, plain Monte Carlo is sample-inefficient.  \algname{}
+  stratifies the input domain by path condition, concentrating samples
+  in regions of high variance and using closed-form mass computations
+  in certified regions.
+\item \emph{Sound, tight intervals.}  A point estimate without a
+  certificate is operationally useless.  \algname{} carries an
+  explicit anytime-valid confidence bound at every step, so the
+  interval it reports is sound regardless of when it stops.
+\end{enumerate}

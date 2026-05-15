@@ -1,0 +1,196 @@
+\section{The \algname{} Algorithm}\label{sec:algorithm}
+
+We describe \algname{} (\emph{Adaptive Symbolic Importance
+  Partitioning}).  \Cref{sec:frontier} introduces the frontier data
+structure.  \Cref{sec:hw-decomp} states the central decomposition
+theorem, which is the load-bearing correctness result of the paper.
+\Cref{sec:asip-loop} gives the driver loop.
+
+\subsection{The Frontier}\label{sec:frontier}
+
+\algname{} maintains a \emph{frontier}: a tree of path-condition
+regions $\{R_\pi\}_{\pi \in \partset}$ whose leaves form a partition
+of $\inX$.  Each leaf $\pi$ carries four pieces of data:
+\begin{itemize}
+\item a symbolic region formula $F_\pi$ in the theory of
+  linear integer/bitvector arithmetic extended with equality and
+  propositional connectives;
+\item a probability estimate $\hwhat_\pi \approx \Pr_\dist[X \in R_\pi]$;
+\item a sample-based hit-rate estimate
+  $\hpathat_\pi \approx \Pr[\prop(\prog(X))=1 \mid X \in R_\pi]$;
+\item a lifecycle status in
+  $\{\mathsf{OPEN}, \mathsf{CLOSED\text{-}T},
+    \mathsf{CLOSED\text{-}F}, \mathsf{EMPTY}\}$.
+\end{itemize}
+
+A leaf is \textsc{open} if its hit rate is not yet symbolically
+certified.  It is \textsc{closed-t} or \textsc{closed-f} if the SMT
+backend has proved that $\prop(\prog(x)) = 1$ or $\prop(\prog(x)) = 0$
+holds uniformly on the region.  It is \textsc{empty} if SMT has shown
+$F_\pi \equiv \bot$.  The overall reliability estimator is
+\begin{equation}\label{eq:muhat-def}
+  \muhat \;=\; \sum_{\pi \in \partset} \hwhat_\pi \cdot \hpathat_\pi.
+\end{equation}
+
+\begin{lemma}[Mass-conservative refinement]\label{lem:mass-conservation}
+  When \algname{} refines a leaf $\pi$ on a clause $b$, producing
+  children $\pi{\wedge}b$ and $\pi{\wedge}\neg b$, the children's
+  estimated masses satisfy
+  $\hwhat_{\pi \wedge b} + \hwhat_{\pi \wedge \neg b} = \hwhat_\pi$
+  exactly (modulo importance-sampling noise on non-axis-aligned
+  regions, which is bounded in \Cref{sec:implementation}).
+\end{lemma}
+
+\begin{proof}[Proof sketch]
+  For axis-aligned LIA children, the closed-form mass of each child
+  is a product of marginal-PMF differences over disjoint coordinate
+  ranges, which sum exactly to the parent's mass.  For general
+  regions, \algname{} draws one importance-sampling batch from
+  $\dist \mid R_\pi$, partitions it by $b$, and splits $\hwhat_\pi$
+  proportionally: $\hwhat_{\pi \wedge b} = \hwhat_\pi \cdot
+  \hpathat_{b \mid \pi}$ and symmetrically for $\neg b$.  The split
+  conserves $\hwhat_\pi$ by construction.
+\end{proof}
+
+\begin{lemma}[Closure soundness]\label{lem:closure-soundness}
+  Suppose the SMT oracle returns \unsat{} for
+  $F_\pi \wedge \neg\,\mathrm{path}_\pi$, where
+  $\mathrm{path}_\pi$ is the conjunction of branch clauses observed
+  at $\pi$.  Then every $x \in R_\pi$ traverses
+  $\mathrm{path}_\pi$ in $\prog$.  If additionally every
+  observation at $\pi$ agrees on the same $\prop$-value
+  $v \in \{0,1\}$, then $\prop(\prog(x)) = v$ for every
+  $x \in R_\pi$.
+\end{lemma}
+
+\begin{proof}[Proof sketch]
+  Suppose some $x \in R_\pi$ takes a different path.  Then some
+  branch clause $b_j$ of $\mathrm{path}_\pi$ is violated by $x$,
+  so $x \models F_\pi \wedge \neg\,\mathrm{path}_\pi$, contradicting
+  the oracle's \unsat{} verdict (by soundness of the SMT backend).
+  Determinism of $\prog$ then forces $\prop(\prog(x)) = v$ uniformly
+  on $R_\pi$.
+\end{proof}
+
+\subsection{The Central Decomposition Theorem}\label{sec:hw-decomp}
+
+Let $\Pi_T$ denote the frontier at the algorithm's stopping time $T$,
+decomposed as
+$\Pi_T = \openleaves \cup \closedleaves \cup \Pi^{\mathsf{EMPTY}}_T$.
+Define the two half-width terms:
+\begin{align}
+  \Wopen(T) \;&=\; \sum_{\pi \in \openleaves} \hwhat_\pi,\\
+  \epsstat(T) \;&=\; \sum_{\pi \in \openleaves}
+    \hwhat_\pi \cdot W_\pi(T),
+\end{align}
+where $W_\pi(T)$ is an anytime-valid $(1-\delta_\pi)$-half-width for
+the per-leaf hit rate, with Bonferroni allocation
+$\delta_\pi = \delta / K_T$ over the $K_T \le K_{\max}$ leaves
+created by the algorithm.
+
+\begin{theorem}[Central decomposition; coverage at $1-\delta$]%
+  \label{thm:hw-decomp}
+  Under Assumption~1, Lemma~\ref{lem:mass-conservation},
+  Lemma~\ref{lem:closure-soundness}, soundness of the SMT oracle, and
+  an anytime-valid per-leaf bound $W_\pi$,
+  \begin{equation}
+    \mathbb{P}\!\Big[\,\big|\muhat_T - \mutrue\big|
+      \;\le\; \epsstat(T) + \Wopen(T)\,\Big]
+    \;\ge\; 1 - \delta.
+  \end{equation}
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+  Decompose the estimation error:
+  \[
+    \muhat_T - \mutrue
+    = \sum_{\pi \in \openleaves}
+        \!\bigl(\hwhat_\pi\hpathat_\pi - w_\pi p_\pi\bigr)
+      + \sum_{\pi \in \closedleaves}
+        \!\bigl(\hwhat_\pi - w_\pi\bigr)p_\pi.
+  \]
+  The closed-leaf term vanishes for axis-aligned closed leaves
+  (by the closed-form mass) and is bounded by
+  Lemma~\ref{lem:mass-conservation} otherwise.  Each open-leaf term
+  splits into a deterministic part---bounded in absolute value by
+  $\hwhat_\pi$, summing to $\Wopen(T)$---and a stochastic part
+  bounded with probability $\ge 1-\delta_\pi$ by
+  $\hwhat_\pi W_\pi(T)$.  A union bound over the $K_T$ leaves
+  controls the total stochastic deviation by $\epsstat(T)$ at
+  confidence $1-\delta$.  The anytime property of $W_\pi$ makes
+  the union bound valid at the data-dependent stopping time $T$.
+\end{proof}
+
+Theorem~\ref{thm:hw-decomp} is the load-bearing result.  Every
+implementation choice in \Cref{sec:implementation} is justified by
+reference to it, and every action the algorithm takes reduces either
+$\epsstat$ or $\Wopen$.  The reported interval is the two-sided
+projection
+\begin{equation}\label{eq:interval}
+  [L, U] \;=\;
+  \bigl[\max(0,\,\muhat_T - \epsstat(T) - \Wopen(T)),\;
+        \min(1,\,\muhat_T + \epsstat(T) + \Wopen(T))\bigr].
+\end{equation}
+
+\subsection{The Driver Loop}\label{sec:asip-loop}
+
+At each iteration, \algname{} considers two action families.
+\begin{description}
+\item[\textsc{Sample}$(\pi, b)$.]
+  Draw $b$ additional iid samples from $\dist \mid R_\pi$, increment
+  $n_\pi$ by $b$, update $\hpathat_\pi$ and $W_\pi$.
+  Expected gain: $\Delta\epsstat \approx \hwhat_\pi\cdot
+  (W_\pi(n_\pi) - W_\pi(n_\pi+b))$.
+  Cost: $b$ program evaluations.
+
+\item[\textsc{Refine}$(\pi, b)$.]
+  Select a branch clause $b$ observed at $\pi$.  Split $\pi$ into
+  $\pi{\wedge}b$ and $\pi{\wedge}\neg b$, distributing $\hwhat_\pi$
+  per Lemma~\ref{lem:mass-conservation}, then immediately attempt
+  closure on each child (Lemma~\ref{lem:closure-soundness}).
+  Expected gain: $\Delta\Wopen \approx \hwhat_\pi \cdot
+  \Pr[\text{at least one child closes}]$.
+  Cost: one SMT call (split) plus two (closure checks).
+\end{description}
+
+The scheduler selects $\arg\max_a\,\mathrm{gain}(a)/\mathrm{cost}(a)$,
+where cost is normalised to one concolic run per unit.  The algorithm
+terminates when $\epsstat(T) + \Wopen(T) \le \varepsilon$, or when
+one of three optional caps fires: sample budget exhausted, wall-clock
+limit reached, or no action exceeds a minimum gain-per-cost floor.
+
+\begin{figure}[t]
+  \caption{\algname{} (Adaptive Symbolic Importance Partitioning)}
+  \label{alg:asip}
+  \hrule\vspace{0.4em}
+  \textbf{Input:} program $\prog$, distribution $\dist$, property
+    $\prop$, target $(\varepsilon, \delta)$, optional budget $B$.\\
+  \textbf{Output:} estimator $\muhat$ and certified interval $[L,U]$.
+  \begin{flushleft}
+  \begin{tabular}{rl}
+    1: & $\partset \gets \{\pi_0\}$ with $F_{\pi_0} = \top$,
+         $\hwhat_{\pi_0} = 1$ \hspace{1.5em}// single \textsc{open}
+         leaf at root\\
+    2: & bootstrap $n_{\mathrm{boot}}$ samples from $\dist$ at
+         $\pi_0$;\; call \textsc{TryClose}($\pi_0$)\\
+    3: & \textbf{while} not \textsc{Terminated}() \textbf{do}\\
+    4: & \quad $\mathcal{A} \gets
+         \{\textsc{Sample}(\pi,b),\,\textsc{Refine}(\pi,b)
+           : \pi \in \openleaves\}$\\
+    5: & \quad $a^\star \gets
+         \arg\max_{a \in \mathcal{A}}\,\mathrm{gain}(a)/\mathrm{cost}(a)$\\
+    6: & \quad execute $a^\star$;\; update $\partset$\\
+    7: & \quad call \textsc{TryClose}($\pi$) for every newly-affected
+         leaf\\
+    8: & \textbf{end while}\\
+    9: & \textbf{return} $(\muhat,\,[L,U])$ per
+         \eqref{eq:muhat-def} and~\eqref{eq:interval}\\
+  \end{tabular}
+  \end{flushleft}
+  \vspace{0.2em}\hrule
+\end{figure}
+
+\algname{} is parametrised by three engineering choices: the
+candidate-clause heuristic for \textsc{Refine}, the per-leaf bound
+construction $W_\pi$, and the SMT backend.  Each choice is discussed
+in \Cref{sec:implementation}.

@@ -1,0 +1,68 @@
+\section{Conclusion}\label{sec:conclusion}
+
+We have presented \algname{}, an algorithm for distribution-aware
+reliability estimation that maintains a frontier of path-condition
+regions and at each step chooses between sampling and SMT-driven
+refinement under a unified gain-per-cost criterion.  The certified
+half-width decomposes into a statistical component $\epsstat$, driven
+down by sampling, and a structural component $\Wopen$, driven down by
+symbolic refinement.  This decomposition---Theorem~\ref{thm:hw-decomp}---is
+simultaneously the algorithm's correctness argument and its scheduler.
+Two implementation choices distinguish \toolname{} from prior
+work: the per-leaf statistical bound instantiates the closed-form
+predictable-plug-in empirical-Bernstein confidence sequence of Waudby-Smith
+and Ramdas, and the closure rule is single-branch (SMT-only), yielding
+a one-lemma soundness contract and eliminating a class of silent bias
+that affects prior prototypes.
+
+\paragraph{Limitations.}
+We identify five.
+
+\begin{enumerate}
+\item \emph{Path-determinism versus property-constancy.}
+  \Cref{sec:soundness-caveat} reports a measured soundness regression
+  on a non-LIA benchmark where the property is evaluated outside the
+  concolic tracer.  The fix is well-understood but not yet
+  implemented.
+
+\item \emph{Distribution class.}  The (D1) restriction excludes
+  Bayes-net-structured and general discrete distributions.  Lifting it
+  requires ancestor-conditioned constrained samplers and a mass
+  estimator that handles coordinate dependence.
+
+\item \emph{Floating-point arithmetic and symbolic memory.}
+  Both are out of scope for the current prototype.
+
+\item \emph{Refinement-clause selection.}  The current heuristic
+  picks from clauses observed in samples; it does not synthesise new
+  predicates.  Craig interpolation is the natural principled
+  alternative.
+
+\item \emph{Statistical efficiency under partition fragmentation.}
+  When the frontier fragments into many high-mass open leaves, the
+  Bonferroni correction inflates $\epsstat$ in proportion to the leaf
+  count, and the SMT cost of refinement is not recovered by variance
+  reduction.
+\end{enumerate}
+
+\paragraph{Future work.}
+Two extensions deserve immediate attention.  First, the closure rule's
+implicit path-implies-property assumption can be discharged by routing
+$\prop$ through the concolic tracer---straightforward, requiring only
+careful handling of short-circuit evaluation.  Second, replacing the
+candidate-clause scorer with Craig
+interpolation~\cite{mcmillan2003interpolation,henzinger2004abstraction}
+would let the algorithm synthesise predicates the program never
+explicitly branches on, broadening the class of programs for which
+$\Wopen$ can be driven to zero.  Beyond these, we are interested in
+substituting a certified approximate model
+counter~\cite{kiesl2024certified,yang2023approxmc6} for the
+importance-sampling estimator on non-axis-aligned regions---yielding
+machine-checkable certificates end-to-end---and in extending the
+distribution class to handle (D2) Bayes-net-structured inputs.
+
+\paragraph{Reproducibility.}
+\toolname{}, including all benchmarks, scripts, and the Docker image,
+is anonymised for review at \code{https://github.com/<anon>/dise}.
+All tables and figures in this paper are reproduced end-to-end by
+\code{scripts/reproduce.sh}.

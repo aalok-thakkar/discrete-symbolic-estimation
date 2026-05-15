@@ -1,0 +1,162 @@
+\section{Introduction}\label{sec:intro}
+
+Consider a network packet-routing function deployed on a server
+handling millions of requests per day.  The function computes a hash
+of each packet's header and maps it to one of $k$ queues; a collision
+sends two packets to the same queue, degrading throughput.  The
+production traffic distribution is far from uniform---certain header
+patterns are orders of magnitude more common than others.  The
+engineering team knows that edge-case collisions exist, because a
+fuzzer found one.  What they need to know is the \emph{rate}: what
+fraction of production inputs actually trigger the defect?  A single
+counterexample does not answer this question.
+
+This scenario is an instance of \emph{distribution-aware reliability
+  estimation}.  Given a deterministic program $\prog : \inX \to \inY$,
+a discrete distribution $\dist$ over $\inX$, and a Boolean property
+$\prop : \inY \to \{0,1\}$, the \emph{operational reliability} of
+$\prog$ under $\dist$ with respect to $\prop$ is
+\begin{equation}\label{eq:mu-def}
+  \mutrue \;=\; \Pr_{x \sim \dist}\!\big[\prop(\prog(x)) = 1\big].
+\end{equation}
+Reliability in this sense arises in \emph{operational testing}, where
+a developer must certify that a production input distribution produces
+a failure rate below a contractual threshold; in \emph{probabilistic
+  program
+  verification}~\cite{geldenhuys2012pse,filieri2015tacas}, where the
+question is inherently quantitative; and in \emph{distribution-aware
+  property-based
+  testing}~\cite{maciver2019hypothesis,claessen2000quickcheck}, where
+quantitative coverage supplements counterexample search.
+
+\paragraph{The challenge.}
+Three difficulties set reliability estimation apart from conventional
+program analysis.
+
+\emph{The answer is a real number, not a Boolean.}  Standard
+verification asks $\forall x\colon \prop(\prog(x))$.  Reliability asks
+for the \emph{measure} of the failure set $\{x : \prop(\prog(x))=1\}$
+under $\dist$.  Counterexample-driven techniques produce a single
+witness; bounding the probability of the entire set requires a
+different methodology.
+
+\emph{The rare-event regime matters most and is hardest.}  When
+$\mutrue \ll 1$, plain Monte Carlo requires $\Theta(1/(\mutrue
+\varepsilon^2))$ samples to certify a half-width of $\varepsilon$---a
+prohibitive budget when $\mutrue = 10^{-4}$ and $\varepsilon =
+10^{-5}$.  Yet rare events are precisely where operational reliability
+matters: a defect that occurs once per million inputs under a uniform
+distribution may occur once per hundred inputs under production
+traffic.
+
+\emph{The certificate is the deliverable.}  A point estimate for
+$\mutrue$ without an accompanying confidence interval is operationally
+useless: one cannot determine whether $\hat{\mu} = 0.003$ is
+consistent with a contractual bound of $\le 0.001$ unless the
+estimator's uncertainty is quantified.  Sound, tight intervals---not
+just point estimates---are the engineering artifact that reliability
+estimation must produce.
+
+\paragraph{Existing approaches.}
+Two families of techniques address this problem, each with
+complementary strengths and limitations.
+
+\emph{Probabilistic symbolic execution}
+(PSE)~\cite{geldenhuys2012pse,filieri2015tacas,borges2014compositional}
+enumerates program paths, encodes each path condition as a formula,
+and computes its exact probability via model
+counting~\cite{chakraborty2013approxmc,yang2023approxmc6}.  PSE is
+exact where it applies.  However, path explosion forces incompleteness
+on programs with unbounded loops or non-linear arithmetic, and
+non-uniform input distributions require ad-hoc extensions of the
+model-counting backend that are not always available.
+
+\emph{Plain sampling}~\cite{sampson2014passert,kwiatkowska2011prism}
+draws iid inputs, executes the program, and applies a concentration
+inequality to the empirical failure rate.  Sampling is robust to all
+sources of PSE difficulty, but inherits the $\Theta(1/\varepsilon^2)$
+rate of independent estimation.  In the rare-event regime, the sample
+budget required to reach a useful half-width is simply too large.
+
+\paragraph{Our approach.}
+We propose a middle course between exact symbolic enumeration and
+unguided sampling.  \algname{} (\emph{Adaptive Symbolic Importance
+  Partitioning}) maintains a \emph{frontier}: a tree whose leaves
+partition the input domain $\inX$ into path-condition regions.  At
+each step the algorithm chooses between two actions:
+\textsc{Sample}$(\pi)$, which draws additional executions from a
+region $\pi$ to tighten its statistical confidence bound, and
+\textsc{Refine}$(\pi, b)$, which invokes an SMT solver to split $\pi$
+along a branch predicate $b$ harvested from observed executions,
+potentially certifying that an entire child region is all-pass or
+all-fail under $\prop$.  The choice is governed by a single
+gain-per-cost criterion applied uniformly to both action types.
+
+The key insight is a two-part decomposition of the certified
+half-width:
+\begin{equation}\label{eq:hw-decomp}
+  \Pr\!\big[\,|\muhat - \mutrue| \;\le\; \epsstat + \Wopen\,\big]
+  \;\ge\; 1 - \delta,
+\end{equation}
+where $\epsstat$ aggregates per-region statistical uncertainty and
+$\Wopen$ is the total probability mass of regions not yet
+symbolically certified.  Every \textsc{Sample} action reduces
+$\epsstat$; every successful \textsc{Refine} reduces $\Wopen$.  The
+algorithm terminates as soon as $\epsstat + \Wopen \le \varepsilon$.
+There are no phases, no hand-tuned switching heuristics: the
+decomposition~\eqref{eq:hw-decomp} is simultaneously the correctness
+argument and the scheduler.
+
+Two design choices distinguish \toolname{} from prior work.  First,
+the per-region statistical bound instantiates the predictable-plug-in
+empirical-Bernstein (PrPl-EB) confidence sequence of Waudby-Smith and
+Ramdas~\cite{waudbysmith2024betting}, which is closed-form,
+variance-adaptive, and \emph{anytime-valid}: it remains sound under
+\algname{}'s data-dependent stopping rule, strictly tightening the
+union-bounded Wilson construction used in earlier statistical model
+checking
+tools~\cite{boyer2013plasma,hartmanns2014modest}.  Second, the
+closure rule is single-branch: a region is certified if and only if
+the SMT backend proves path-determinism ($F_\pi \wedge
+\neg\,\text{path}_\pi$ is \unsat{}).  There is no sample-based
+fallback.  The price is wider intervals on programs whose closure is
+symbolically intractable; the gain is a one-lemma soundness contract
+and the elimination of a class of silent bias that affects prior
+prototypes.
+
+\paragraph{Contributions.}
+This paper makes three contributions.
+
+\begin{enumerate}
+\item \emph{The \algname{} algorithm and its correctness proof.}  We
+  introduce \algname{} and prove that its reported interval $[L,U]$
+  covers $\mutrue$ with probability at least $1-\delta$
+  (\Cref{thm:hw-decomp}).  The proof reduces to two independently
+  checkable invariants---mass-conservative refinement
+  (\Cref{lem:mass-conservation}) and SMT-certified closure
+  (\Cref{lem:closure-soundness})---plus an application of an
+  anytime-valid concentration inequality per leaf.
+
+\item \emph{Anytime-valid certification via PrPl-EB.}  We give the
+  first application of the predictable-plug-in empirical-Bernstein
+  confidence sequence in the context of program reliability
+  estimation.  The bound is closed-form, variance-adaptive, and
+  requires no prior knowledge of per-leaf variance, strictly
+  tightening standard Hoeffding and Wilson constructions under
+  adaptive stopping.
+
+\item \emph{Implementation and evaluation.}  We implement \algname{}
+  as \toolname{}, a Python prototype with a Z3 backend and a benchmark
+  suite of $12$ integer programs.  On rare-event benchmarks whose path
+  structure aligns with the input distribution, \toolname{} reduces
+  sample counts by up to two orders of magnitude relative to plain and
+  stratified Monte Carlo.
+\end{enumerate}
+
+\paragraph{Paper organisation.}
+\Cref{sec:problem} formally states the problem and defines the input
+distribution class.  \Cref{sec:related} surveys related work.
+\Cref{sec:algorithm} presents \algname{} and proves
+\Cref{thm:hw-decomp}.  \Cref{sec:implementation} describes the
+\toolname{} implementation.  \Cref{sec:results} reports experimental
+results.  \Cref{sec:conclusion} concludes.

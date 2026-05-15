@@ -1,0 +1,120 @@
+% !TEX program = pdflatex
+%
+% DiSE — Adaptive Symbolic Importance Partitioning for Distribution-Aware
+% Reliability Estimation
+%
+% Target venue: International Symposium on Automated Technology for
+% Verification and Analysis (ATVA).
+% Template: Springer LNCS (llncs).
+%
+% Build: pdflatex main && bibtex main && pdflatex main && pdflatex main
+% Or:    latexmk -pdf main
+
+\documentclass[runningheads]{llncs}
+
+% ---------------------------------------------------------------------------
+% Packages
+% ---------------------------------------------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath, amssymb}
+% NB: amsthm conflicts with llncs's own theorem environments; we use
+% llncs's \spnewtheorem and the built-in proof.
+\usepackage{mathtools}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+% cleveref / enumitem / algorithm / algpseudocode are nice-to-have but
+% not in every minimal TeX distribution. To keep this draft buildable
+% without extra installs, we use \providecommand fallbacks and the
+% plain LaTeX enumerate/itemize. On a full TeX Live install, uncomment
+% the lines below for typed cross-references and Algorithm boxes.
+% \usepackage{cleveref}
+% \usepackage{enumitem}
+% \usepackage{algorithm}
+% \usepackage{algpseudocode}
+\providecommand{\Cref}[1]{Section~\ref{#1}}
+\providecommand{\cref}[1]{section~\ref{#1}}
+\usepackage{listings}
+% microtype is nice but needs scalable fonts; disable for the minimal
+% build. Comment out the next line if you want microtype on a full
+% TeX install.
+% \usepackage{microtype}
+
+% ---------------------------------------------------------------------------
+% Theorem environments (llncs already defines some)
+% ---------------------------------------------------------------------------
+\spnewtheorem*{assumption*}{Assumption}{\bfseries}{\itshape}
+
+% ---------------------------------------------------------------------------
+% Notation macros — keep this list short and consistent.
+% ---------------------------------------------------------------------------
+\newcommand{\inX}{\mathcal{X}}
+\newcommand{\inY}{\mathcal{Y}}
+\newcommand{\dist}{\mathcal{D}}
+\newcommand{\prog}{P}
+\newcommand{\prop}{\varphi}
+\newcommand{\mutrue}{\mu}
+\newcommand{\muhat}{\hat{\mu}}
+\newcommand{\region}{R}
+\newcommand{\partset}{\Pi}
+\newcommand{\openleaves}{\partset^{\mathrm{open}}}
+\newcommand{\closedleaves}{\partset^{\mathrm{closed}}}
+\newcommand{\Wopen}{W_{\mathrm{open}}}
+\newcommand{\epsstat}{\varepsilon_{\mathrm{stat}}}
+\newcommand{\hwhat}{\hat{w}}
+\newcommand{\hpathat}{\hat{p}}
+\newcommand{\smt}{\textsc{Smt}}
+\newcommand{\unsat}{\textsf{unsat}}
+\newcommand{\sat}{\textsf{sat}}
+\newcommand{\unknown}{\textsf{unknown}}
+\newcommand{\toolname}{\textsc{DiSE}}
+\newcommand{\algname}{\textsc{Asip}}
+\newcommand{\code}[1]{\texttt{#1}}
+
+% Listings styling (we mostly avoid raw code in the body but keep this for
+% the implementation section).
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  showstringspaces=false,
+  columns=fullflexible,
+}
+
+% ---------------------------------------------------------------------------
+% Document
+% ---------------------------------------------------------------------------
+\begin{document}
+
+\title{\toolname{}: Certifying Program Reliability\\via Adaptive Symbolic Partitioning}
+\titlerunning{\toolname{}: Certifying Program Reliability via Adaptive Symbolic Partitioning}
+
+% \author{Anonymous}
+\author{Aalok Thakkar\orcidID{0000-0000-0000-0000}}
+\authorrunning{A. Thakkar}
+\institute{Affiliation\\
+  \email{thakkarsciencestrategy@gmail.com}}
+
+\maketitle
+
+\input{sections/00-abstract.tex}
+\keywords{Probabilistic program analysis \and Statistical model
+  checking \and Reliability estimation \and Symbolic execution \and
+  Anytime-valid confidence intervals.}
+
+\input{sections/01-introduction.tex}
+\input{sections/02-problem-statement.tex}
+\input{sections/03-related-work.tex}
+\input{sections/04-algorithm.tex}
+\input{sections/05-implementation.tex}
+\input{sections/06-results.tex}
+\input{sections/07-conclusion.tex}
+
+% ---------------------------------------------------------------------------
+% Bibliography
+% ---------------------------------------------------------------------------
+\bibliographystyle{splncs04}
+\bibliography{references}
+
+\end{document}

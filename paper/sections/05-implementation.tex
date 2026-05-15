@@ -1,0 +1,131 @@
+\section{Implementation}\label{sec:implementation}
+
+We implement \algname{} as \toolname{}, an open-source Python prototype
+of approximately $5{,}000$ lines of code with $290+$ tests.  This
+section covers the three engineering choices that turn
+\Cref{alg:asip} into a working artifact: the concolic front-end, the
+per-leaf bound $W_\pi$, and the SMT abstraction layer.
+
+\subsection{Concolic Execution and Branch Capture}\label{sec:concolic}
+
+A concolic run~\cite{sen2005cute,godefroid2005dart} executes $\prog(x)$
+on a concrete input $x$ while simultaneously tracking the symbolic
+conditions on $x$ that drove each branch taken.  \toolname{}
+implements this via a tagged-integer wrapper: arithmetic operations on
+tagged values propagate their symbolic representations, and comparisons
+emit a branch record $(\text{clause},\text{direction})$ before
+delegating to the concrete operator.
+
+Each run produces the path condition (the conjunction of branch clauses
+along the path taken), the property value $\prop(\prog(x))$, and the
+concrete input.  Property evaluation is intentionally \emph{outside}
+the tracer: $\prop$ is evaluated on the concrete output, and the
+resulting Boolean is appended to the run record.  This division of
+labour keeps path conditions small, since $\prop$ is typically a thin
+projection (\code{$y \le k$}, \code{popcount($y$) $\ge 0$}) that
+should not inflate the symbolic representation.
+
+\subsection{The Per-Leaf Bound $W_\pi$}\label{sec:per-leaf-bound}
+
+Theorem~\ref{thm:hw-decomp} requires an anytime-valid
+$(1-\delta_\pi)$-half-width for each open leaf's hit rate.  \toolname{}
+exposes four choices via the \code{method} parameter.
+
+\paragraph{Wilson (\code{method="wilson"}).}
+The classical fixed-$n$ Wilson score interval~\cite{wilson1927}.  Tight
+on Bernoulli leaves at a pre-committed sample count; \emph{not} sound
+under data-dependent stopping.  Appropriate only when the budget is
+fixed in advance.
+
+\paragraph{Anytime Wilson (\code{method="anytime"}).}
+The Wilson interval evaluated at confidence $1 - \delta_n$ with
+$\delta_n = 6\delta_\pi/(\pi^2 n^2)$, union-bounded over all $n$ via
+$\sum_{n=1}^\infty 6/(\pi^2 n^2) = 1$.  Sound under data-dependent
+stopping; loose by a $\sqrt{\log n}$ factor and a $\pi^2/6$
+inflation.
+
+\paragraph{Predictable-plug-in empirical Bernstein (\code{method="betting"}).}
+Theorem~2 of Waudby-Smith and Ramdas~\cite{waudbysmith2024betting}.
+For a Bernoulli history $X_1,\ldots,X_n$ at leaf $\pi$, the half-width
+is
+\begin{equation}\label{eq:prpl-eb}
+  W_\pi \;=\;
+    \frac{\log(2/\delta_\pi) + \sum_{i=1}^n v_i\,\psi_E(\lambda_i)}
+         {\sum_{i=1}^n \lambda_i},
+  \qquad
+  \psi_E(\lambda) = \tfrac{-\log(1-\lambda) - \lambda}{4},
+\end{equation}
+with $v_i = 4(X_i - \hat\mu_{i-1})^2$ and predictable bet
+\begin{equation}
+  \lambda_t \;=\; \min\!\Bigg(
+    \sqrt{\frac{2\log(2/\delta_\pi)}
+              {\hat\sigma_{t-1}^2 \cdot t\log(t+1)}},\;c\Bigg),
+  \quad c \in (0,1),
+\end{equation}
+where $\hat\mu_t$ and $\hat\sigma_t^2$ are Wilson-regularised running
+mean and variance.  The default truncation is $c = 1/2$, as
+recommended in~\cite[\S3.2]{waudbysmith2024betting}.  PrPl-EB is
+anytime-valid, closed-form, and variance-adaptive: its asymptotic
+width is $\sqrt{2\sigma^2\log(2/\delta_\pi)}$, matching Bennett's
+inequality without requiring known variance.  This is the recommended
+default for certified results and is strictly tighter than
+\code{anytime} on low-variance leaves.
+
+\paragraph{Classical and Maurer--Pontil Bernstein.}
+Provided as \code{bernstein} and \code{empirical-bernstein} for
+baseline comparison only; both are fixed-$n$ bounds and not sound
+under data-dependent stopping.
+
+\subsection{The Closure Rule}\label{sec:closure}
+
+A leaf is closed only when the SMT backend certifies
+path-determinism:
+\begin{verbatim}
+def try_close(node):
+    if n_samples < min_samples: return False
+    if not all observed paths identical: return False
+    if not all observed phi values identical: return False
+    if is_satisfiable(F_pi AND NOT observed_path) != "unsat":
+        return False
+    node.status = CLOSED_T if phi == 1 else CLOSED_F
+    return True
+\end{verbatim}
+There is no sample-based fallback.  A leaf whose closure the SMT
+backend cannot certify (\sat{} or \unknown{}) remains open and
+contributes to $\Wopen$.  This makes the soundness contract a single
+lemma (Lemma~\ref{lem:closure-soundness}), at the cost of wider
+intervals on programs whose path structure is symbolically
+intractable.
+
+\subsection{SMT Abstraction}\label{sec:smt}
+
+The closure check, region-emptiness check, and refinement-clause
+selection all go through an \code{SMTBackend} protocol with three
+implementations: a Z3 backend~\cite{demoura2008z3} for production use,
+a \code{MockBackend} restricted to axis-aligned LIA that permits the
+test suite to run without external dependencies, and a
+\code{CachedBackend} wrapper that memoises solver queries (typical
+cache hit rate: $40$--$60\%$ on the benchmark suite).  All backends
+guarantee soundness of \sat/\unsat{}; returning \unknown{} is always
+admissible.
+
+\subsection{Refinement-Clause Selection}\label{sec:clause-selection}
+
+\algname{}'s \textsc{Refine} action requires selecting a branch clause
+$b$ from the finite set harvested from observed paths at $\pi$.
+\toolname{} scores each candidate by expected mass balance---intuitively,
+the clause that partitions $\hwhat_\pi$ closest to 50/50, maximising
+the probability that at least one child closes.  The heuristic is
+deliberately conservative; a principled alternative based on Craig
+interpolation is identified as the primary next development direction
+(\Cref{sec:conclusion}).
+
+\subsection{Reproducibility}\label{sec:repro}
+
+\toolname{}'s source code, benchmark suite, and reproduction scripts
+are available at \code{https://github.com/<anon>/dise} (URL anonymised
+for review).  The Docker image and \code{scripts/reproduce.sh}
+regenerate all results in \Cref{sec:results} in approximately
+$30$--$60$ minutes on commodity hardware.  Seed control is
+centralised: each \code{(method, benchmark, seed)} triple is fully
+deterministic.
