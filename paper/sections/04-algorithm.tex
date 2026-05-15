@@ -1,14 +1,14 @@
-\section{The \algname{} Algorithm}\label{sec:algorithm}
+\section{The \toolname{} Algorithm}\label{sec:algorithm}
 
-We describe \algname{} (\emph{Adaptive Symbolic Importance
-  Partitioning}).  \Cref{sec:frontier} introduces the frontier data
+We describe \toolname{}, an adaptive partitioning algorithm for
+certified reliability estimation.  \Cref{sec:frontier} introduces the frontier data
 structure.  \Cref{sec:hw-decomp} states the central decomposition
 theorem, which is the load-bearing correctness result of the paper.
 \Cref{sec:asip-loop} gives the driver loop.
 
 \subsection{The Frontier}\label{sec:frontier}
 
-\algname{} maintains a \emph{frontier}: a tree of path-condition
+\toolname{} maintains a \emph{frontier}: a tree of path-condition
 regions $\{R_\pi\}_{\pi \in \partset}$ whose leaves form a partition
 of $\inX$.  Each leaf $\pi$ carries four pieces of data:
 \begin{itemize}
@@ -33,7 +33,7 @@ $F_\pi \equiv \bot$.  The overall reliability estimator is
 \end{equation}
 
 \begin{lemma}[Mass-conservative refinement]\label{lem:mass-conservation}
-  When \algname{} refines a leaf $\pi$ on a clause $b$, producing
+  When \toolname{} refines a leaf $\pi$ on a clause $b$, producing
   children $\pi{\wedge}b$ and $\pi{\wedge}\neg b$, the children's
   estimated masses satisfy
   $\hwhat_{\pi \wedge b} + \hwhat_{\pi \wedge \neg b} = \hwhat_\pi$
@@ -45,7 +45,7 @@ $F_\pi \equiv \bot$.  The overall reliability estimator is
   For axis-aligned LIA children, the closed-form mass of each child
   is a product of marginal-PMF differences over disjoint coordinate
   ranges, which sum exactly to the parent's mass.  For general
-  regions, \algname{} draws one importance-sampling batch from
+  regions, \toolname{} draws one importance-sampling batch from
   $\dist \mid R_\pi$, partitions it by $b$, and splits $\hwhat_\pi$
   proportionally: $\hwhat_{\pi \wedge b} = \hwhat_\pi \cdot
   \hpathat_{b \mid \pi}$ and symmetrically for $\neg b$.  The split
@@ -134,7 +134,7 @@ projection
 
 \subsection{The Driver Loop}\label{sec:asip-loop}
 
-At each iteration, \algname{} considers two action families.
+At each iteration, \toolname{} considers two action families.
 \begin{description}
 \item[\textsc{Sample}$(\pi, b)$.]
   Draw $b$ additional iid samples from $\dist \mid R_\pi$, increment
@@ -160,7 +160,7 @@ one of three optional caps fires: sample budget exhausted, wall-clock
 limit reached, or no action exceeds a minimum gain-per-cost floor.
 
 \begin{figure}[t]
-  \caption{\algname{} (Adaptive Symbolic Importance Partitioning)}
+  \caption{The \toolname{} adaptive partitioning algorithm}
   \label{alg:asip}
   \hrule\vspace{0.4em}
   \textbf{Input:} program $\prog$, distribution $\dist$, property
@@ -190,7 +190,7 @@ limit reached, or no action exceeds a minimum gain-per-cost floor.
   \vspace{0.2em}\hrule
 \end{figure}
 
-\algname{} is parametrised by three engineering choices: the
+\toolname{} is parametrised by three engineering choices: the
 candidate-clause heuristic for \textsc{Refine}, the per-leaf bound
 construction $W_\pi$, and the SMT backend.  Each choice is discussed
 in \Cref{sec:implementation}.

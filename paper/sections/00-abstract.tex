@@ -9,9 +9,9 @@
   techniques fail on programs with non-linear arithmetic or
   unbounded loops.
 
-  We present \algname{} (\emph{Adaptive Symbolic Importance
-    Partitioning}), an algorithm that bridges the two regimes.
-  \algname{} maintains a frontier of path-condition regions and at
+  We present \toolname{}, an adaptive partitioning algorithm that
+  bridges the two regimes.
+  \toolname{} maintains a frontier of path-condition regions and at
   each step chooses between sampling and SMT-driven refinement under
   a unified gain-per-cost criterion.  The certified half-width
   decomposes as
@@ -26,12 +26,12 @@
   The per-region statistical bound uses the predictable-plug-in
   empirical-Bernstein confidence sequence of Waudby-Smith and Ramdas
   --- closed-form, variance-adaptive, and anytime-valid under
-  \algname{}'s data-dependent stopping.  The closure rule is
+  \toolname{}'s data-dependent stopping.  The closure rule is
   single-branch: a region is certified if and only if an SMT oracle
   proves path-determinism, yielding a one-lemma soundness contract
   with no sample-based fallback.
 
-  We implement \algname{} as \toolname{}, a Python prototype with a
+  We evaluate \toolname{}, a Python prototype with a
   Z3 backend, and evaluate it on $12$ integer benchmarks.  On
   rare-event programs whose path structure aligns with the input
   distribution, \toolname{} reduces sample counts by up to two orders

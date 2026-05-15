@@ -25,8 +25,9 @@ coverage.xml
 .idea/
 .vscode/
 
-# Benchmark / experiment outputs
-results/
+# Ad-hoc benchmark output at the repo root (not the tracked study
+# under experiments/results/).
+/results/
 *.csv.tmp
 
 # Claude tooling — local to the editor session, not for the repo

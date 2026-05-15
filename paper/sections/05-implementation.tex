@@ -1,6 +1,6 @@
 \section{Implementation}\label{sec:implementation}
 
-We implement \algname{} as \toolname{}, an open-source Python prototype
+\toolname{} is an open-source Python prototype
 of approximately $5{,}000$ lines of code with $290+$ tests.  This
 section covers the three engineering choices that turn
 \Cref{alg:asip} into a working artifact: the concolic front-end, the
@@ -111,7 +111,7 @@ admissible.
 
 \subsection{Refinement-Clause Selection}\label{sec:clause-selection}
 
-\algname{}'s \textsc{Refine} action requires selecting a branch clause
+\toolname{}'s \textsc{Refine} action requires selecting a branch clause
 $b$ from the finite set harvested from observed paths at $\pi$.
 \toolname{} scores each candidate by expected mass balance---intuitively,
 the clause that partitions $\hwhat_\pi$ closest to 50/50, maximising

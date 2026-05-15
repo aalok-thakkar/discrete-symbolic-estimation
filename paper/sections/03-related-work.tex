@@ -1,6 +1,6 @@
 \section{Related Work}\label{sec:related}
 
-\algname{} sits at the intersection of five research lines.  We
+\toolname{} sits at the intersection of five research lines.  We
 position it against each.
 
 \paragraph{Probabilistic symbolic execution.}
@@ -15,12 +15,12 @@ Pasareanu's synthesis lectures~\cite{pasareanu2022lecture}, has
 broadened the class of treatable path conditions and input
 distributions.
 
-PSE is exact where it applies; \algname{} is statistical and
+PSE is exact where it applies; \toolname{} is statistical and
 produces $(1-\delta)$-coverage intervals.  On programs where PSE
 applies---bounded linear-integer-arithmetic paths and tractable input
-distributions---PSE strictly dominates.  \algname{} fills the gap
+distributions---PSE strictly dominates.  \toolname{} fills the gap
 when programs have unbounded loops, non-linear arithmetic, or
-non-uniform input distributions.  When every region in \algname{}'s
+non-uniform input distributions.  When every region in \toolname{}'s
 frontier admits a closed-form mass and the closure rule succeeds on
 every leaf, the two approaches agree exactly.
 
@@ -31,9 +31,9 @@ Statistical variants---PLASMA-Lab~\cite{boyer2013plasma}, the Modest
 Toolset~\cite{hartmanns2014modest}, and Storm's SMC
 front-end~\cite{schoolderman2024storm}---discharge the same
 specifications by sampling the underlying model.  These tools operate
-on dedicated modelling languages (PRISM, JANI, Modest); \algname{}
+on dedicated modelling languages (PRISM, JANI, Modest); \toolname{}
 operates directly on Python source, treating the program itself as the
-model.  The trade-off is complementary: \algname{} cannot reason about
+model.  The trade-off is complementary: \toolname{} cannot reason about
 nondeterminism or scheduler choices, while PMC tools cannot reason
 about source-level loops without a hand-built model.
 
@@ -43,10 +43,10 @@ Sampson et al.~\cite{sampson2014passert} introduced
 sampling with Hoeffding or Bayesian bounds.  \toolname{}'s
 \code{failure\_probability} API targets the same query class.  The
 difference is the bound and the sampling strategy: passerts use plain
-Hoeffding sampling over the whole input space, whereas \algname{}
+Hoeffding sampling over the whole input space, whereas \toolname{}
 stratifies by symbolic path condition and uses a variance-adaptive
 anytime-valid bound~\cite{waudbysmith2024betting}.  On programs whose
-path structure concentrates probability mass, \algname{} reaches the
+path structure concentrates probability mass, \toolname{} reaches the
 same certified half-width with substantially fewer samples; on
 programs with flat, well-mixed distributions the advantage narrows.
 
@@ -54,7 +54,7 @@ programs with flat, well-mixed distributions the advantage narrows.
 Approximate model counting~\cite{chakraborty2013approxmc,yang2023approxmc6}
 provides PAC-$(\varepsilon,\delta)$ counts for propositional
 satisfiability problems.  Recent work has added formal certificates
-in Isabelle~\cite{kiesl2024certified}.  \algname{} does not currently
+in Isabelle~\cite{kiesl2024certified}.  \toolname{} does not currently
 invoke a model counter---it uses importance sampling to estimate mass
 on non-axis-aligned regions---but a natural extension would delegate
 the region-mass subproblem to a certified counter, retaining
@@ -71,7 +71,7 @@ Ramdas~\cite{waudbysmith2024betting} sharpen this with a closed-form
 predictable-plug-in empirical-Bernstein (PrPl-EB) confidence sequence
 that is variance-adaptive and matches the asymptotic width of
 Bennett's inequality without requiring the variance to be known.
-\algname{} uses PrPl-EB per leaf with Bonferroni correction over the
+\toolname{} uses PrPl-EB per leaf with Bonferroni correction over the
 (bounded) leaf count.
 
 \paragraph{Property-based testing.}
@@ -84,7 +84,7 @@ property test can drive both edge-case search and operational
 reliability estimation.
 
 \paragraph{Summary.}
-\algname{}'s technical contribution lies between the exact PSE line,
+\toolname{}'s technical contribution lies between the exact PSE line,
 which it does not displace where PSE applies, and the sampling-only
 literature, which it improves upon via symbolic stratification.  No
 prior algorithm combines SMT-driven adaptive partitioning, closed-form

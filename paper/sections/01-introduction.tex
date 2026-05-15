@@ -80,8 +80,7 @@ budget required to reach a useful half-width is simply too large.
 
 \paragraph{Our approach.}
 We propose a middle course between exact symbolic enumeration and
-unguided sampling.  \algname{} (\emph{Adaptive Symbolic Importance
-  Partitioning}) maintains a \emph{frontier}: a tree whose leaves
+unguided sampling.  \toolname{} maintains a \emph{frontier}: a tree whose leaves
 partition the input domain $\inX$ into path-condition regions.  At
 each step the algorithm chooses between two actions:
 \textsc{Sample}$(\pi)$, which draws additional executions from a
@@ -112,7 +111,7 @@ the per-region statistical bound instantiates the predictable-plug-in
 empirical-Bernstein (PrPl-EB) confidence sequence of Waudby-Smith and
 Ramdas~\cite{waudbysmith2024betting}, which is closed-form,
 variance-adaptive, and \emph{anytime-valid}: it remains sound under
-\algname{}'s data-dependent stopping rule, strictly tightening the
+\toolname{}'s data-dependent stopping rule, strictly tightening the
 union-bounded Wilson construction used in earlier statistical model
 checking
 tools~\cite{boyer2013plasma,hartmanns2014modest}.  Second, the
@@ -128,8 +127,8 @@ prototypes.
 This paper makes three contributions.
 
 \begin{enumerate}
-\item \emph{The \algname{} algorithm and its correctness proof.}  We
-  introduce \algname{} and prove that its reported interval $[L,U]$
+\item \emph{The \toolname{} algorithm and its correctness proof.}  We
+  introduce \toolname{} and prove that its reported interval $[L,U]$
   covers $\mutrue$ with probability at least $1-\delta$
   (\Cref{thm:hw-decomp}).  The proof reduces to two independently
   checkable invariants---mass-conservative refinement
@@ -145,7 +144,7 @@ This paper makes three contributions.
   tightening standard Hoeffding and Wilson constructions under
   adaptive stopping.
 
-\item \emph{Implementation and evaluation.}  We implement \algname{}
+\item \emph{Implementation and evaluation.}  We implement \toolname{}
   as \toolname{}, a Python prototype with a Z3 backend and a benchmark
   suite of $12$ integer programs.  On rare-event benchmarks whose path
   structure aligns with the input distribution, \toolname{} reduces
@@ -156,7 +155,7 @@ This paper makes three contributions.
 \paragraph{Paper organisation.}
 \Cref{sec:problem} formally states the problem and defines the input
 distribution class.  \Cref{sec:related} surveys related work.
-\Cref{sec:algorithm} presents \algname{} and proves
+\Cref{sec:algorithm} presents \toolname{} and proves
 \Cref{thm:hw-decomp}.  \Cref{sec:implementation} describes the
 \toolname{} implementation.  \Cref{sec:results} reports experimental
 results.  \Cref{sec:conclusion} concludes.

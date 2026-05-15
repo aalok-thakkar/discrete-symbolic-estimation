@@ -63,20 +63,20 @@ into a Boolean failure flag and setting $\prop(y) = [y = 1]$.
 Worked examples of both framings appear in \Cref{sec:results}.
 
 \paragraph{Why the problem is hard.}
-\algname{} addresses three inherent difficulties, each of which is
+\toolname{} addresses three inherent difficulties, each of which is
 mitigated by a distinct component of its design.
 \begin{enumerate}
 \item \emph{Real-valued answer.}  Reliability is a measure, not a
-  predicate.  \algname{} maintains a fractional estimator over a
+  predicate.  \toolname{} maintains a fractional estimator over a
   partition of $\inX$, accumulating evidence from both sampling and
   symbolic reasoning.
 \item \emph{Rare events.}  When $\mutrue \approx 0$ or $\mutrue
-  \approx 1$, plain Monte Carlo is sample-inefficient.  \algname{}
+  \approx 1$, plain Monte Carlo is sample-inefficient.  \toolname{}
   stratifies the input domain by path condition, concentrating samples
   in regions of high variance and using closed-form mass computations
   in certified regions.
 \item \emph{Sound, tight intervals.}  A point estimate without a
-  certificate is operationally useless.  \algname{} carries an
+  certificate is operationally useless.  \toolname{} carries an
   explicit anytime-valid confidence bound at every step, so the
   interval it reports is sound regardless of when it stops.
 \end{enumerate}
