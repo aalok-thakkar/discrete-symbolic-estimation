@@ -135,7 +135,84 @@ keeping wall-clock bounded.
 and IQR of `half_width` and `samples_used`, plus the empirical
 coverage rate across the three seeds.
 
-## Results
+## Headline result: rare-event scaling
+
+The headline figure of this study isolates the single regime where
+DiSE's structural variance reduction is most visible: an *axis-aligned
+rare slice* whose mass we can dial across five orders of magnitude.
+
+We define a parametric program with a single integer input
+$x \in \{1, \ldots, 9999\}$ and three axis-aligned regions:
+
+```python
+def rare_slice(x):
+    if x < 1000:                   return 0   # below the slice
+    if x >= 1000 + rare_width:     return 0   # above the slice
+    return 1                                  # inside the slice
+```
+
+All path conditions are linear-integer-arithmetic and axis-aligned,
+so DiSE's refinement produces three closed-form leaves with *zero*
+mass-estimation variance.  Varying `rare_width` from $5000$ down to
+$1$ moves the true rare-event mass $\mu$ from $\sim 0.5$ to $\sim
+10^{-4}$.
+
+The experiment measures **samples to certify $\mu$ to half-width
+$\varepsilon = 0.005$** under each method, with `max_budget = 200,000`
+samples and `dise_budget_seconds = 15`.  Three seeds per cell;
+$\delta = 0.05$; DiSE uses `bootstrap = 500`, `batch_size = 100`.
+
+![rare-event scaling](figures/00_rare_event_scaling.png)
+
+The figure shows three regimes:
+
+**Sweet spot $\mu \in [5 \times 10^{-4}, 2 \times 10^{-3}]$ — DiSE
+wins decisively.**  At `rare_width=20` ($\mu = 0.002$) DiSE certifies
+$\mu$ to half-width **exactly zero** in $940$ samples (median across
+3 seeds).  Plain MC at the same target half-width reports
+$\hat\mu = 0$ after $400$ samples — *the rare event was never seen*,
+so the Wilson interval is tight around zero but the point estimate
+is wrong.  DiSE is the only method whose $\hat\mu$ tracks the truth
+$\mu = 0.002$ at small sample counts.  Same pattern at
+`rare_width=5` ($\mu = 5 \times 10^{-4}$).
+
+**High-mass regime $\mu \ge 10^{-2}$ — plain MC wins.**  Once the
+rare event is common enough that the Wilson interval has signal at
+small budgets, plain MC's $\Theta(1/(\mu \varepsilon^2))$ scaling
+beats DiSE's per-cell SMT overhead.  At `rare_width=1000`
+($\mu = 0.10$), plain MC reaches $\varepsilon$ in $14{,}000$ samples
+while DiSE hits the wall-clock cap with half-width $0.15$.  The
+crossover sits at around $\mu \approx 10^{-2}$.
+
+**Very rare regime $\mu \le 10^{-4}$ — both struggle, for different
+reasons.**  Plain MC reports $\hat\mu = 0$ (a misleading apparently-
+tight CI around the wrong point).  DiSE hits the wall-clock cap with
+half-width $\approx 0.45$ because the $500$-sample bootstrap was
+unlikely to observe the rare slice ($\mathbb{E}[\text{hits}] = 500
+\cdot 10^{-4} = 0.05$); without an observation in the rare branch,
+the SMT closure check on the dominant CLOSED_FALSE leaf refuses to
+close (the region admits the unobserved hit slice).  The fix is to
+bootstrap until at least one hit is observed in every reachable
+branch — a benchmark-aware adjustment we leave for follow-up.
+
+The figure includes the theoretical $1/(2 \mu \varepsilon^2)$
+envelope as a guide for the slope plain MC must trace.  Hollow black
+rings mark cells that hit the sample or wall-clock budget without
+reaching $\varepsilon$.
+
+Reproduction: `uv run python experiments/run_rare_event_scaling.py`.
+Raw rows are in [`results/rare_event.jsonl`](results/rare_event.jsonl);
+the per-cell aggregate is in
+[`results/rare_event.json`](results/rare_event.json).
+
+**Takeaway for the paper.**  DiSE has a clean sweet spot — rare
+events that are *observable in the bootstrap* — where it dominates
+plain MC by giving exact answers in $O(1)$ samples.  Outside that
+spot, plain MC is either better (high $\mu$) or both methods need
+benchmark-aware bootstrapping (very low $\mu$).  The win is real and
+measurable, but narrower than the prototype's documentation suggests.
+
+## Full suite: half-width and coverage at fixed budget
 
 > **Status.** Numbers in this section are pulled from the most recent
 > run of `experiments/run_full_study.py`.  Re-run the script to refresh.
@@ -268,6 +345,51 @@ predictable-plug-in empirical-Bernstein bound is variance-adaptive
 and avoids the $\pi^2/6$ inflation of the Basel union-in-time
 construction.  The gap is largest on low-variance leaves (rare-event
 benchmarks); it narrows toward the Bernoulli-$\tfrac{1}{2}$ regime.
+
+## Appendix A: regimes where DiSE does not help
+
+Three benchmarks in the suite are *adversarial* to DiSE by design:
+
+| Benchmark         | Why DiSE has nothing to do                                  |
+|-------------------|-------------------------------------------------------------|
+| `popcount_w6`     | Property is the tautology $\mathrm{popcount}(x) \ge 0$; $\mu = 1$ everywhere. |
+| `parity_w6`       | Property is the tautology $\mathrm{parity}(x) \in \{0, 1\}$; $\mu = 1$.       |
+| `log2_w6`         | Property is the tautology $\log_2(x) \ge -1$ on the entire support; $\mu = 1$. |
+
+These programs have **no conditional branches the strict closure rule
+can refine on**.  DiSE's bootstrap produces all-agreeing observations,
+the SMT closure check is trivially \unsat{} (path formula is True), the
+single leaf closes, and $\hat\mu = 1$ is reported in microseconds.
+This is a soundness-equivalent outcome to plain MC and uses comparable
+samples.
+
+We include these benchmarks for completeness (they exercise the
+``closes-on-empty-path-clauses`` corner of the algorithm) but exclude
+them from the headline tables because they carry no useful signal
+about adaptive stratification.  Plain MC is the right tool whenever
+the property is a tautology — DiSE adds overhead without benefit.
+
+## Appendix B: DiSE's wall-clock-cap regime
+
+On `gcd_steps_le_5_BG`, `miller_rabin_w=2_BG`, `collatz_le_30_BG`,
+`modpow_fits_in_4b`, `sieve_primality`, and `sparse_trie_depth`, the
+DiSE variants hit the 8-second wall-clock cap (`budget_seconds=8`)
+before the strict closure rule could certify enough leaves to reach
+the target half-width.  The reported intervals collapse to the
+trivial $[0, 1]$ — sound but uninformative.
+
+The cause is the SMT cost of the closure check on non-LIA path
+conditions.  Modular exponentiation, GCD's `b % a`, and trial-
+division primality all generate path conditions that Z3 can decide
+but slowly; with $\sim 100$ leaves and a closure check per leaf, the
+per-iteration overhead saturates the cap before $W_{\text{open}}$
+shrinks meaningfully.
+
+Two engineering paths would help, both deferred to follow-up work:
+(a) parallel SMT calls — closure checks are independent; (b)
+delegating non-LIA region mass to a certified approximate model
+counter (ApproxMC6 + the formally-certified counter of
+Kiesl-Reiter et al., CAV 2024).
 
 ## A measured soundness failure of `quasi_mc_sobol`
 

@@ -313,18 +313,87 @@ def plot_error(summary: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
+def plot_rare_event_scaling() -> None:
+    """The headline log-log: samples-to-epsilon vs true rare-event mass.
+
+    Theory predicts plain MC has slope -1 (samples ~ Theta(1/mu)) and
+    DiSE has slope 0 (samples ~ Theta(1)).  The figure makes that
+    contrast visible at a glance.
+    """
+    summary_path = RESULTS_DIR / "rare_event.json"
+    if not summary_path.exists():
+        print(f"  rare_event.json not found; skipping headline figure")
+        return
+    summary = json.loads(summary_path.read_text())
+    rows = summary["rows"]
+    methods = sorted({r["method"] for r in rows},
+                     key=lambda m: METHOD_ORDER.index(m) if m in METHOD_ORDER else 99)
+    eps = summary["metadata"]["epsilon"]
+    max_budget = summary["metadata"]["max_budget"]
+
+    fig, ax = plt.subplots(figsize=(7.0, 4.8))
+    for method in methods:
+        mrs = sorted([r for r in rows if r["method"] == method],
+                     key=lambda r: r["mu_truth"])
+        if not mrs:
+            continue
+        xs = [r["mu_truth"] for r in mrs]
+        ys = [r["median_samples"] for r in mrs]
+        hit_budget = [r["any_hit_budget"] for r in mrs]
+        ax.plot(xs, ys,
+                color=METHOD_COLOURS.get(method, "black"),
+                marker=METHOD_MARKERS.get(method, "o"),
+                label=method, linewidth=2.0, markersize=7)
+        # Mark budget-capped points with an open ring overlay.
+        for x, y, hit in zip(xs, ys, hit_budget):
+            if hit:
+                ax.scatter([x], [y], s=120, facecolor="none",
+                           edgecolor="black", linewidth=1.2, zorder=10)
+
+    # Reference line: samples ~ log(2/delta) / (2 * mu * eps^2) is the
+    # Hoeffding-budget envelope for plain MC at rare events.  Plot it
+    # as a guide showing the slope -1 that MC must trace.
+    import numpy as _np
+    mu_grid = _np.geomspace(min(r["mu_truth"] for r in rows),
+                             max(r["mu_truth"] for r in rows), 50)
+    log_term = math.log(2.0 / summary["metadata"]["delta"])
+    hoeffding_curve = log_term / (2.0 * mu_grid * eps ** 2)
+    ax.plot(mu_grid, hoeffding_curve, ":", color="#444", lw=1.2,
+            label="Hoeffding $1 / (2\\mu\\varepsilon^2)$")
+
+    ax.axhline(max_budget, color="black", linestyle="--", lw=0.8, alpha=0.5,
+               label=f"max budget = {max_budget:,}")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel(r"true rare-event mass  $\mu$")
+    ax.set_ylabel(r"samples to certify hw $\leq$ "
+                  + f"{eps}" + r" at $\delta=$" + f"{summary['metadata']['delta']}")
+    ax.set_title(r"Rare-event scaling: samples-to-$\varepsilon$ vs.\ $\mu$")
+    ax.grid(True, alpha=0.3, which="both")
+    ax.legend(fontsize=8, ncol=2, loc="best", frameon=True)
+    fig.tight_layout()
+    _save(fig, "00_rare_event_scaling")
+
+
 def main() -> int:
     global RESULTS_DIR, FIG_DIR
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results-dir", default=str(RESULTS_DIR))
     parser.add_argument("--out-dir", default=str(FIG_DIR))
+    parser.add_argument("--rare-event-only", action="store_true",
+                        help="only regenerate the rare-event scaling figure")
     args = parser.parse_args()
     RESULTS_DIR = Path(args.results_dir)
     FIG_DIR = Path(args.out_dir)
 
-    summary = _load_summary()
-    print(f"# {len(summary['summary_rows'])} summary rows; generating 5 figures")
+    if args.rare_event_only:
+        plot_rare_event_scaling()
+        return 0
 
+    summary = _load_summary()
+    print(f"# {len(summary['summary_rows'])} summary rows; generating figures")
+
+    plot_rare_event_scaling()
     plot_halfwidth_vs_budget(summary)
     plot_sample_efficiency(summary)
     plot_coverage(summary)
