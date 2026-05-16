@@ -126,8 +126,16 @@ NONDET_TYPES = {
     "__VERIFIER_nondet_bool":   ("_Bool",           1, False),
 }
 
-ERROR_FUNCS = {"__VERIFIER_error", "reach_error", "abort"}
-ASSERT_FUNCS = {"__VERIFIER_assert"}
+ERROR_FUNCS = {
+    "__VERIFIER_error", "reach_error", "abort",
+    "__assert_fail",          # glibc-style assertion failure
+    "__assert_rtn",           # macOS / BSD libc
+    "__assert",               # other libc variants
+}
+ASSERT_FUNCS = {
+    "__VERIFIER_assert",
+    "assert",                 # standard C assert macro (after preproc-stripping)
+}
 ASSUME_FUNCS = {"__VERIFIER_assume"}
 
 
@@ -189,54 +197,138 @@ class _Transpiler(c_ast.NodeVisitor):
     # ---------- visitor methods ----------
 
     def visit_FileAST(self, node: c_ast.FileAST) -> None:
+        # Collect all FuncDefs in source order; translate every function
+        # whose body is provided.  Helpers go before main so Python's
+        # name-resolution finds them.  We reject programs with
+        # __VERIFIER_nondet_* calls inside loop bodies (semantically
+        # ill-fit for our reliability framing — each call is a fresh
+        # iid draw, requiring a stream model that is out of scope).
+        funcdefs: list[c_ast.FuncDef] = []
         for ext in node.ext:
             if isinstance(ext, c_ast.Decl) and isinstance(ext.type, c_ast.FuncDecl):
-                # Skip extern declarations (no body)
+                # extern declaration with no body — fine, ignore
                 continue
             if isinstance(ext, c_ast.FuncDef):
-                self.visit(ext)
+                funcdefs.append(ext)
                 continue
             if isinstance(ext, c_ast.Typedef):
                 continue
             if isinstance(ext, c_ast.Decl):
-                # Global; ignore for now (could be const).
+                # Global — ignore (could be const-initialised; we
+                # accept the loss in fidelity for the rare programs that
+                # use globals as state).
                 continue
             raise Untranslatable(
                 f"unsupported top-level construct: {type(ext).__name__}"
             )
 
+        # Reject programs that put nondets inside loops.
+        for f in funcdefs:
+            self._check_nondets_in_loops(f)
+
+        # Track user-defined function names so calls dispatch correctly.
+        self.user_funcs = {f.decl.name for f in funcdefs
+                           if f.decl.name not in NONDET_TYPES
+                           and f.decl.name not in ERROR_FUNCS
+                           and f.decl.name not in ASSERT_FUNCS
+                           and f.decl.name not in ASSUME_FUNCS}
+
+        # Emit helpers first, main last.
+        helpers = [f for f in funcdefs if f.decl.name != "main"]
+        mains = [f for f in funcdefs if f.decl.name == "main"]
+        for f in helpers:
+            self._emit_funcdef(f)
+        for f in mains:
+            self._emit_funcdef(f, is_main=True)
+
+    def _check_nondets_in_loops(self, node: c_ast.Node, in_loop: bool = False) -> None:
+        """Raise Untranslatable if a __VERIFIER_nondet_* call appears
+        inside any loop body in this function.  We allow nondets only
+        at the top-level statement of main (the standard SV-COMP idiom
+        used for input declarations)."""
+        from pycparser.c_ast import FuncCall, While, For, DoWhile
+        if isinstance(node, FuncCall) and isinstance(node.name, c_ast.ID):
+            if node.name.name in NONDET_TYPES and in_loop:
+                raise Untranslatable(
+                    f"__VERIFIER_nondet call inside loop body "
+                    f"(not modelled as iid stream)"
+                )
+        new_in_loop = in_loop or isinstance(node, (While, For, DoWhile))
+        for _, child in node.children():
+            self._check_nondets_in_loops(child, new_in_loop)
+
     def visit_FuncDef(self, node: c_ast.FuncDef) -> None:
+        # Should only be reached via _emit_funcdef in the new flow;
+        # left for back-compat with old call sites.
+        self._emit_funcdef(node, is_main=(node.decl.name == "main"))
+
+    def _emit_funcdef(self, node: c_ast.FuncDef, is_main: bool = False) -> None:
         fname = node.decl.name
-        if fname != "main":
-            # We only translate main(); other functions are inlined or treated
-            # as opaque. A future enhancement would inline pure helper
-            # functions; SV-COMP programs mostly inline themselves.
-            self.notes.append(f"skipped non-main function: {fname}")
-            return
+        # Reset per-function scope.
+        saved_scope = self.scope
+        self.scope = _LocalScope()
 
-        # The function signature in the OUTPUT depends on what nondets we
-        # find. We collect nondets while translating the body, then patch
-        # the def header at the end.
-        body_start = len(self.lines)
-        self._emit("def __PLACEHOLDER_HEADER__:")
-        self._indent_block()
+        # For main, collect nondet parameters; the header is patched at
+        # the end.  For helpers, use the declared parameter list.
+        params: list[str] = []
+        nondets_at_entry = len(self.nondets)
 
-        try:
-            self.visit(node.body)
-        except Untranslatable:
-            raise
-        except Exception as exc:
-            raise Untranslatable(
-                f"transpilation crash inside main(): {type(exc).__name__}: {exc}"
-            )
+        if not is_main:
+            # Helper function: extract declared parameters.
+            decl = node.decl.type
+            if isinstance(decl, c_ast.FuncDecl) and decl.args is not None:
+                for p in decl.args.params:
+                    if isinstance(p, c_ast.Typename):
+                        # ``void`` parameter; nothing to add.
+                        continue
+                    if not hasattr(p, "name") or p.name is None:
+                        continue
+                    pname = self._new_name(p.name)
+                    params.append(pname)
+                    # Track unsigned type for masking.
+                    try:
+                        c_type, bits, signed = self._type_info(p.type)
+                        if not signed and bits <= 32:
+                            self.scope.unsigned_bits[pname] = bits
+                    except Untranslatable:
+                        pass
+            header_line = f"def {fname}({', '.join(params)}):"
+            self._emit(header_line)
+            self._indent_block()
+            try:
+                self.visit(node.body)
+            except Untranslatable:
+                raise
+            except Exception as exc:
+                raise Untranslatable(
+                    f"transpilation crash inside {fname}(): "
+                    f"{type(exc).__name__}: {exc}"
+                )
+            self._emit("return 0")
+            self._dedent_block()
+            self._emit("")
+        else:
+            # main: patch the header after the body collects nondets.
+            body_start = len(self.lines)
+            self._emit("def __PLACEHOLDER_HEADER__:")
+            self._indent_block()
+            try:
+                self.visit(node.body)
+            except Untranslatable:
+                raise
+            except Exception as exc:
+                raise Untranslatable(
+                    f"transpilation crash inside main(): "
+                    f"{type(exc).__name__}: {exc}"
+                )
+            self._emit("return 0")
+            self._dedent_block()
+            self._emit("")
+            new_nondets = self.nondets[nondets_at_entry:]
+            param_list = ", ".join(n.name for n in new_nondets)
+            self.lines[body_start] = f"def main({param_list}):"
 
-        # Default fall-through: return 0.
-        self._emit("return 0")
-        self._dedent_block()
-
-        # Patch the def header with the nondets we collected.
-        param_list = ", ".join(n.name for n in self.nondets)
-        self.lines[body_start] = f"def main({param_list}):"
+        self.scope = saved_scope
 
     def visit_Compound(self, node: c_ast.Compound) -> None:
         if node.block_items is None:
@@ -250,7 +342,9 @@ class _Transpiler(c_ast.NodeVisitor):
         if isinstance(node.type, c_ast.FuncDecl):
             raise Untranslatable("nested function declaration")
         if isinstance(node.type, c_ast.ArrayDecl):
-            raise Untranslatable("array declaration in function body")
+            # Simple 1-D array with a constant size, e.g. ``int a[10]``.
+            self._emit_array_decl(node)
+            return
         c_type, bits, signed = self._type_info(node.type)
         py_name = self._new_name(node.name)
 
@@ -266,6 +360,49 @@ class _Transpiler(c_ast.NodeVisitor):
         if not signed and bits <= 32:
             init_src = f"({init_src}) & {(1 << bits) - 1:#x}"
         self._emit(f"{py_name} = {init_src}")
+
+    def _emit_array_decl(self, node: c_ast.Decl) -> None:
+        """Translate a 1-D array declaration to a Python list.
+
+        Supports ``int a[10]``, ``int a[10] = {1, 2, 3}``, ``int a[] =
+        {1, 2, 3}``.  Multi-dimensional arrays and variable-size
+        declarations are rejected.
+        """
+        arr = node.type
+        # Underlying element type
+        if not isinstance(arr.type, c_ast.TypeDecl):
+            raise Untranslatable("complex array declaration")
+        try:
+            c_type, bits, signed = self._type_info(arr.type)
+        except Untranslatable as e:
+            raise Untranslatable(f"array element type: {e}")
+        # Size: must be a constant.
+        size: int | None = None
+        if arr.dim is not None:
+            if isinstance(arr.dim, c_ast.Constant) and arr.dim.type == "int":
+                size = int(arr.dim.value.rstrip("uUlL"))
+            else:
+                raise Untranslatable("variable-size array")
+        py_name = self._new_name(node.name)
+        if node.init is None:
+            if size is None:
+                raise Untranslatable(
+                    "array declaration with neither size nor initialiser"
+                )
+            self._emit(f"{py_name} = [0] * {size}")
+            return
+        # With initialiser, e.g. ``{1, 2, 3}``.
+        if isinstance(node.init, c_ast.InitList):
+            elems = [self._expr_to_python(e) for e in node.init.exprs]
+            if size is None:
+                size = len(elems)
+            if len(elems) < size:
+                elems += ["0"] * (size - len(elems))
+            self._emit(f"{py_name} = [{', '.join(elems)}]")
+            return
+        raise Untranslatable(
+            f"unsupported array initialiser: {type(node.init).__name__}"
+        )
 
     def visit_Assignment(self, node: c_ast.Assignment) -> None:
         lhs = self._lvalue_to_python(node.lvalue)
@@ -395,11 +532,21 @@ class _Transpiler(c_ast.NodeVisitor):
         return self.visit_Assignment(node)
 
     def visit_Label(self, node: c_ast.Label) -> None:
-        # Labels are only useful with goto; reject.
-        raise Untranslatable("labeled statements (goto)")
+        # SV-COMP uses ``ERROR: { reach_error(); abort(); }`` --- a
+        # compound block labeled for documentation but whose body runs
+        # regardless.  Elide the label and visit the body.  (Genuine
+        # control-flow joins via ``goto`` are rejected separately.)
+        if node.stmt is not None:
+            self.visit(node.stmt)
 
     def visit_Goto(self, node: c_ast.Goto) -> None:
-        raise Untranslatable("goto")
+        # Special-case the SV-COMP ``goto ERROR`` idiom: jump to the
+        # error label.  Translate as an immediate AssertionError.
+        if node.name in ("ERROR", "Error", "error", "_ERROR_"):
+            self.has_assert = True
+            self._emit(f'raise AssertionError("goto {node.name}")')
+            return
+        raise Untranslatable(f"goto to non-error label: {node.name}")
 
     def visit_Switch(self, node: c_ast.Switch) -> None:
         # Could translate to an if-elif chain; defer.
@@ -416,6 +563,10 @@ class _Transpiler(c_ast.NodeVisitor):
     def _lvalue_to_python(self, node: c_ast.Node) -> str:
         if isinstance(node, c_ast.ID):
             return self._new_name(node.name)
+        if isinstance(node, c_ast.ArrayRef):
+            arr = self._expr_to_python(node.name)
+            idx = self._expr_to_python(node.subscript)
+            return f"{arr}[{idx}]"
         raise Untranslatable(
             f"unsupported lvalue: {type(node).__name__}"
         )
@@ -496,8 +647,27 @@ class _Transpiler(c_ast.NodeVisitor):
             return self._funccall_to_python(node)
         if isinstance(node, c_ast.Cast):
             # We mostly ignore casts; check the target type for sanity.
-            _ = self._type_info(node.to_type.type)
+            try:
+                _ = self._type_info(node.to_type.type)
+            except Untranslatable:
+                pass
             return self._expr_to_python(node.expr)
+        if isinstance(node, c_ast.ArrayRef):
+            arr = self._expr_to_python(node.name)
+            idx = self._expr_to_python(node.subscript)
+            return f"{arr}[{idx}]"
+        if isinstance(node, c_ast.Assignment):
+            # Assignment-as-expression (e.g. ``if ((x = read()) == EOF)``).
+            # Pre-compute via walrus-like trick.
+            lv = self._lvalue_to_python(node.lvalue)
+            rv = self._expr_to_python(node.rvalue)
+            if node.op != "=":
+                raise Untranslatable(
+                    f"compound assignment in expression: {node.op}"
+                )
+            # Use Python 3.8+ walrus; assignment expression returns the
+            # assigned value.
+            return f"({lv} := ({rv}))"
         raise Untranslatable(
             f"unsupported expression: {type(node).__name__}"
         )
@@ -541,6 +711,14 @@ class _Transpiler(c_ast.NodeVisitor):
                 raise Untranslatable("__VERIFIER_assume with no argument")
             arg = self._expr_to_python(node.args.exprs[0])
             return f"(0 if ({arg}) else (_ for _ in ()).throw(_Assumed()))"
+
+        # User-defined function — dispatch by name; the function will
+        # be emitted earlier in the Python source.
+        if fname in getattr(self, "user_funcs", set()):
+            args_src = ", ".join(
+                self._expr_to_python(a) for a in (node.args.exprs if node.args else [])
+            )
+            return f"{fname}({args_src})"
 
         raise Untranslatable(f"unsupported function call: {fname}")
 
