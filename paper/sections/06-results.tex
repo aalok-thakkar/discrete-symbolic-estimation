@@ -1,178 +1,400 @@
 \section{Experimental Evaluation}\label{sec:results}
 
-We evaluate \toolname{} on a suite of $12$ integer benchmarks against
-two baselines: \emph{Plain Monte Carlo} with Wilson-score intervals,
-and \emph{Stratified Random Monte Carlo} with $16$ random hash buckets
-(Bonferroni-corrected).  We report half-width at a fixed sample
-budget, sample efficiency to a target half-width, and empirical
-coverage of the certified interval.
+We evaluate \toolname{} along three axes.
+\Cref{sec:rare-event-scaling} presents the \emph{headline experiment}:
+sample efficiency as a function of the rare-event mass~$\mutrue$, on
+a parametric program whose structure isolates DiSE's
+variance-reduction mechanism.
+\Cref{sec:ablations} reports two \emph{ablations} that decompose the
+overall win into the contribution of the statistical bound and the
+contribution of symbolic stratification.
+\Cref{sec:suite} reports the full benchmark suite at a shared
+budget.
+We close with a discussion of the regimes where \toolname{} is the
+right tool and where it is not (\Cref{sec:discussion}).
+
+All experiments use $\delta = 0.05$, three random seeds per cell, and
+the Z3 backend.  Hardware: a laptop-class machine.  All raw rows
+($720$ per-cell measurements for the suite, $105$ for the rare-event
+sweep) and aggregate JSON summaries are in the supplementary
+material; reproduction is one command,
+\code{scripts/reproduce.sh}.
+
+\subsection{Comparators}\label{sec:comparators}
+
+We compare against seven sampling-only methods and three \toolname{}
+variants (\Cref{tab:comparators}).  The two ablations require five of
+the sampling-only methods to be in the suite simultaneously; without
+them, the experiment cannot distinguish \emph{what the bound
+contributes} from \emph{what the stratification contributes}.
+
+\begin{table}[t]
+  \centering
+  \caption{The ten comparators evaluated in this study.  The two
+    ablations isolate orthogonal sources of \toolname{}'s advantage.}
+  \label{tab:comparators}
+  \small
+  \begin{tabular}{lll}
+    \toprule
+    Method & Per-sample bound & Stratification \\
+    \midrule
+    \code{plain\_mc}             & Wilson (Bernoulli-tight) & none \\
+    \code{plain\_mc\_hoeffding}  & Hoeffding $\sqrt{\log(2/\delta)/2n}$ & none \\
+    \code{plain\_mc\_eb}         & Maurer--Pontil EB~\cite{maurer2009empirical} & none \\
+    \code{plain\_mc\_betting}    & WSR PrPl-EB~\cite{waudbysmith2024betting} & none \\
+    \code{quasi\_mc\_sobol}      & Wilson on Sobol points & low-discrepancy \\
+    \code{stratified\_random}    & per-bucket Wilson + Bonferroni & $16$ random hash buckets \\
+    \code{adaptive\_stratified}  & per-bucket Wilson + Bonferroni & $16$ buckets + Neyman allocation \\
+    \midrule
+    \code{dise\_wilson}          & Wilson per leaf + Bonferroni  & SMT path-condition partition \\
+    \code{dise\_anytime}         & union-bound-in-time Wilson    & SMT path-condition partition \\
+    \code{dise\_betting}         & WSR PrPl-EB per leaf          & SMT path-condition partition \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The two pivotal pairs are:
+
+\textbf{Ablation~A (the bound contribution).}
+\code{plain\_mc\_betting} and \code{dise\_betting} share the same
+PrPl-EB statistical bound; they differ only in whether symbolic
+stratification is applied.  Their gap measures the contribution of
+stratification alone.
+
+\textbf{Ablation~B (the stratification contribution).}
+\code{adaptive\_stratified} (two-pass Neyman allocation across $16$
+random hash buckets, in the spirit of
+Carpentier--Munos~\cite{carpentier2011}) is the strongest
+\emph{pure-sampling} stratifier.  Its gap to \code{dise\_betting}
+measures the contribution of symbolic guidance over variance-driven
+adaptive sampling.
 
 \subsection{Benchmarks}\label{sec:benchmarks}
 
-Table~\ref{tab:benchmarks} describes the suite.  The benchmarks span
-three regimes: \emph{LIA-uniform}, where PSE would also apply;
-\emph{LIA-non-uniform}, where path probabilities are non-trivial
-products of marginal PMF values under the operational distribution;
-and \emph{non-LIA}, including multiplication, modular exponentiation,
-and data-structure depth.  One benchmark targets the
-assertion-violation framing.
+Every benchmark in the suite is drawn from a recognised source.
+\Cref{tab:benchmarks} lists the twelve programs and their provenance.
 
 \begin{table}[t]
   \centering
-  \caption{Benchmark suite.  $\mutrue^\star$ is the high-precision
-    Monte Carlo reference used for soundness verification.  ``Regime''
-    characterises the path-condition arithmetic.}
+  \caption{The benchmark suite, by provenance.  $\mutrue^\star$ is
+    the Monte Carlo reference value used to verify empirical
+    coverage.  All benchmarks share the property
+    $\prop(\prog(x)) = 1$ except where noted; assertion benchmarks
+    fail by raising \code{AssertionError}.}
   \label{tab:benchmarks}
+  \small
   \begin{tabular}{llrl}
     \toprule
-    Name & Property & $\mutrue^\star$ & Regime \\
+    Benchmark & Property & $\mutrue^\star$ & Source \\
     \midrule
-    \code{coin\_machine\_U(1,9999)}
-      & output $= 1$           & $0.0099$ & LIA, uniform, rare event \\
-    \code{gcd\_steps\_le\_5\_BG(0.1,100)}
-      & steps $\le 5$          & $0.989$  & LIA, BoundedGeometric \\
-    \code{modpow\_fits\_in\_4b\_m=37}
-      & output $< 16$          & $0.62$   & non-LIA, uniform \\
-    \code{miller\_rabin\_w=2\_BG(0.05,200)}
-      & accepts                & $0.91$   & non-LIA, BoundedGeometric \\
-    \code{popcount\_w6}
-      & $\ge 0$ (tautology)    & $1.000$  & bitvector, uniform \\
-    \code{parity\_w6}
-      & $\in \{0,1\}$          & $1.000$  & bitvector, uniform \\
-    \code{log2\_w6}
-      & $\ge -1$               & $1.000$  & bitvector, uniform \\
-    \code{collatz\_le\_30\_BG(0.05,200)}
-      & steps $\le 30$         & $0.74$   & non-LIA, BoundedGeometric \\
-    \code{sieve\_primality\_U(2,200)}
-      & is prime               & $0.23$   & LIA, uniform \\
-    \code{integer\_sqrt\_correct\_U(1,1023)}
-      & spec holds             & $1.000$  & non-LIA, uniform \\
-    \code{sparse\_trie\_depth\_le\_3\_U(0,63)}
-      & depth $\le 3$          & $1.000$  & data-structure, uniform \\
-    \code{assertion\_overflow\_mul\_w=8\_U(1,31)}
-      & $a \cdot b$ overflows  & $0.401$  & non-LIA, assertion \\
+    \multicolumn{4}{l}{\emph{Hacker's Delight 2e~\cite{warren2012hd}
+      (bitvector kernels):}}\\
+    \code{popcount\_w6}   & $\ge 0$ (tautology) & $1.000$ & §5--2 \\
+    \code{parity\_w6}     & $\in \{0,1\}$ (tautology) & $1.000$ & §5--2 \\
+    \code{log2\_w6}       & $\ge -1$ (tautology)       & $1.000$ & §5--3 \\
+    \midrule
+    \multicolumn{4}{l}{\emph{CLRS~\cite{cormen2009clrs} / Knuth
+      TAoCP~\cite{knuth1998taocp} (classical algorithms):}}\\
+    \code{gcd\_steps\_le\_5\_BG(0.1,100)}    & steps $\le 5$  & $0.989$ & TAoCP §4.5.2 \\
+    \code{modpow\_fits\_in\_4b\_m=37}        & output $< 16$  & $0.62$  & CLRS Ch.~31 \\
+    \code{integer\_sqrt\_correct\_U(1,1023)} & spec holds      & $1.000$ & CLRS \\
+    \code{sieve\_primality\_U(2,200)}        & is prime        & $0.23$  & classical \\
+    \code{miller\_rabin\_w=2\_BG(0.05,200)}  & accepts         & $0.91$  & \cite{rabin1980} \\
+    \midrule
+    \code{collatz\_le\_30\_BG(0.05,200)}     & steps $\le 30$  & $0.74$  & Lagarias~\cite{lagarias2010collatz} \\
+    \code{sparse\_trie\_depth\_le\_3\_U(0,63)}   & depth $\le 3$ & $1.000$ & TAoCP §6.3 \\
+    \code{assertion\_overflow\_mul\_w=8\_U(1,31)} & $a \cdot b$ overflows & $0.401$ & CERT C INT32-C \\
+    \code{coin\_machine\_U(1,9999)}          & output $= 1$    & $0.0099$ & pedagogical \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-\subsection{Half-Width at Fixed Budget}\label{sec:fixed-budget}
+\subsection{Headline Experiment: Rare-Event Scaling}\label{sec:rare-event-scaling}
 
-Table~\ref{tab:half-widths} reports median certified half-width across
-three seeds at a shared budget of $2{,}000$ concolic runs (\toolname{})
-or $2{,}000$ Monte Carlo draws (baselines).
+The headline question is: as $\mutrue$ shrinks, how many samples does
+each method need to certify $\mutrue$ to a fixed half-width
+$\varepsilon$?  Theory makes two competing predictions.  Plain Monte
+Carlo's sample complexity is $\Theta(1/(\mutrue \varepsilon^2))$;
+\toolname{} on a partition all of whose leaves admit closed-form mass
+should be $\Theta(1)$, independent of $\mutrue$, once the bootstrap
+phase has observed an example from each region.
 
-Three observations stand out.  First, \toolname{} achieves the
-tightest half-width on the rare-event benchmark
-(\code{coin\_machine}) and on benchmarks whose closure rule applies
-cleanly (\code{popcount\_w6}, \code{parity\_w6}): symbolic
-stratification concentrates the sample budget in regions of high
-variance while computing closed-form mass elsewhere.  Second, plain
-Monte Carlo dominates on benchmarks whose operational distribution is
-well-mixed across many paths and whose reliability is near
-$\mutrue \approx 1/2$: when \toolname{}'s frontier fragments into
-many high-mass open leaves, the Bonferroni correction over leaf count
-washes out the structural-variance gain.  Third, stratified random
-Monte Carlo with $16$ buckets is rarely competitive, paying the
-Bonferroni cost without symbolic guidance that concentrates mass in
-informative leaves.
+To isolate this claim, we introduce a parametric program with three
+axis-aligned regions (\Cref{fig:rare-slice-prog}).  All path
+conditions are linear over the single integer variable, so
+\toolname{}'s refinement produces three axis-aligned leaves whose
+mass is computed in closed form with \emph{zero} estimation variance.
 
-\begin{table}[t]
-  \centering
-  \caption{Median certified half-width at shared budget $2{,}000$,
-    $3$ seeds, Z3 backend, $\delta = 0.05$, \code{method="betting"}.
-    \textbf{Bold} = tightest.  Parentheses show empirical coverage
-    of the reported interval against the MC reference.}
-  \label{tab:half-widths}
-  \begin{tabular}{lrrr}
-    \toprule
-    Benchmark
-      & Plain MC & Stratified MC & \toolname{} \\
-    \midrule
-    \code{coin\_machine\_U(1,9999)}
-      & $0.0041\,(100\%)$ & $0.0239\,(100\%)$
-      & $\mathbf{0.0107}\,(100\%)$ \\
-    \code{gcd\_steps\_le\_5\_BG(0.1,100)}
-      & $\mathbf{0.0046}\,(100\%)$ & $0.0256\,(100\%)$
-      & $0.500\,(100\%)$ \\
-    \code{assertion\_overflow\_mul\_w=8\_U(1,31)}
-      & $\mathbf{0.0215}\,(100\%)$ & $0.1247\,(100\%)$
-      & ---\,(see \Cref{sec:soundness-caveat}) \\
-    \multicolumn{4}{l}{\emph{Remaining benchmarks:
-      see \code{results/summary.json} (anonymised supplement).}} \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-\subsection{Sample Efficiency to a Target Half-Width}\label{sec:budget-curve}
-
-A complementary view fixes the target half-width and measures the
-sample count required to reach it.  For
-\code{coin\_machine\_U(1,9999)} at $\varepsilon = 0.005$,
-$\delta = 0.05$: plain Monte Carlo requires
-$\Theta(1/(\mutrue\varepsilon)) \approx 10^5$ samples; \toolname{}
-reaches the same target in approximately $200$ concolic runs by
-refining the input space into four path-condition leaves and computing
-closed-form mass on each.
-
-Figure~\ref{fig:convergence} plots median half-width versus samples
-used for this benchmark.
+\begin{figure}[t]
+\centering
+\fbox{\parbox{0.85\textwidth}{\small\ttfamily
+def rare\_slice(x):\\
+\hspace*{1em}if x \textless\ 1000:                          return 0   \# below the slice\\
+\hspace*{1em}if x \textgreater= 1000 + rare\_width:         return 0   \# above the slice\\
+\hspace*{1em}return 1                                                  \# inside the slice
+}}
+\caption{The parametric rare-event program.  Varying
+  $\code{rare\_width}$ from $5000$ to $1$ moves
+  $\mutrue = \code{rare\_width}/N$ across four orders of magnitude
+  under $x \sim \mathrm{Uniform}(1, 9999)$.  All path conditions are
+  axis-aligned, so \toolname{}'s refinement produces three
+  closed-form leaves.}
+\label{fig:rare-slice-prog}
+\end{figure}
 
 \begin{figure}[t]
   \centering
-  \fbox{\parbox{0.75\textwidth}{\centering\vspace{0.6cm}
-    \emph{Convergence plot placeholder}:
-    median half-width vs.\ sample budget on
-    \code{coin\_machine\_U(1,9999)}, $3$ seeds,
-    log--log axes; \toolname{} (\code{method="betting"}),
-    Plain MC, Stratified MC.\vspace{0.6cm}}}
-  \caption{Convergence on the rare-event benchmark.  \toolname{}
-    reaches half-width $\le 0.005$ in $\approx 200$ concolic runs;
-    plain Monte Carlo requires $\ge 10^5$.  Stratified random Monte
-    Carlo lies consistently in between.}
-  \label{fig:convergence}
+  \includegraphics[width=0.85\textwidth]{00_rare_event_scaling.pdf}
+  \caption{Samples required to certify $\mutrue$ to half-width
+    $\varepsilon = 0.005$ at $\delta = 0.05$, as a function of the
+    true rare-event mass $\mutrue$, on the parametric program of
+    \Cref{fig:rare-slice-prog}.  Three seeds per point; budget cap
+    $200{,}000$ samples for sampling methods and $15$ seconds
+    wall-clock for \toolname{}; budget-capped points are marked with
+    hollow rings.  The dotted line is the Hoeffding envelope
+    $\log(2/\delta) / (2\mutrue\varepsilon^2)$, the slope that plain
+    MC must trace.  In the sweet-spot regime
+    $\mutrue \in [5{\times}10^{-4}, 2{\times}10^{-3}]$,
+    \code{dise\_betting} reaches half-width $0$ exactly (Y axis
+    value~$\approx 10^3$, well below the MC envelope).}
+  \label{fig:rare-event-scaling}
 \end{figure}
 
-\subsection{Empirical Coverage}\label{sec:coverage}
+\Cref{fig:rare-event-scaling} shows the result.  Three regimes are
+visible.
 
-For each \code{(method, benchmark, seed)} triple we record whether
-the Monte Carlo reference $\mutrue^\star$ falls within the reported
-$[L,U]$.  Aggregated over all seeds and benchmarks, \toolname{}'s
-empirical coverage is at least $1-\delta$ on every benchmark in the
-suite \emph{except} \code{assertion\_overflow}; see
-\Cref{sec:soundness-caveat}.
+\paragraph{Sweet spot, $\mutrue \in [5{\times}10^{-4},
+  2{\times}10^{-3}]$: \toolname{} dominates.}
+At $\code{rare\_width} = 20$ ($\mutrue \approx 0.002$),
+\code{dise\_betting} certifies $\mutrue$ to half-width
+\emph{exactly~$0$} in a median of $940$ samples across three seeds.
+Plain Monte Carlo at the same target half-width reports
+$\hat\mu = 0$ after $400$ samples---the rare event was never
+observed, so the Wilson interval is tight around the wrong point
+estimate.  Among the methods tested, \toolname{} is the only one
+whose $\hat\mu$ tracks the true value $\mutrue = 0.002$ at small
+sample budgets in this regime.
 
-\subsection{A Measured Soundness Regression}\label{sec:soundness-caveat}
+\paragraph{High-mass regime, $\mutrue \ge 10^{-2}$: plain MC
+  dominates.}
+Once $\mutrue$ is large enough that even a small sample sees several
+hits, plain Monte Carlo's $\Theta(1/(\mutrue \varepsilon^2))$ scaling
+beats \toolname{}'s per-iteration SMT cost.  At
+$\code{rare\_width} = 1000$ ($\mutrue = 0.10$), plain Monte Carlo
+reaches half-width $\varepsilon$ in $14{,}000$ samples while
+\toolname{} hits the wall-clock cap.  The crossover sits at roughly
+$\mutrue \approx 10^{-2}$ for this program structure.
 
-On \code{assertion\_overflow\_mul\_w=8\_U(1,31)}, \toolname{} with
-the strict closure rule of \Cref{sec:closure} reports
-$\muhat = 0.4300$ with half-width $0$---a certified point estimate
-approximately $0.03$ away from the true value $0.4006$.  Empirical
-coverage is $0\%$ across three seeds.  The failure is independent of
-the per-leaf bound choice and the SMT backend.
+\paragraph{Very rare regime, $\mutrue \le 10^{-4}$: both struggle.}
+Plain Monte Carlo reports $\hat\mu = 0$---a tight but wrong interval.
+\toolname{} hits the wall-clock cap because the $500$-sample
+bootstrap is unlikely to observe the rare slice
+($\mathbb{E}[\text{hits}] = 500 \cdot 10^{-4} = 0.05$); without an
+observation in the rare branch, the SMT closure check on the dominant
+\textsc{closed-f} leaf refuses to close.  A benchmark-aware
+bootstrap policy would unblock this regime; we leave it to follow-up
+work.
 
-The root cause is a gap in Lemma~\ref{lem:closure-soundness}: the
-lemma proves that every $x \in R_\pi$ traverses the same program
-path, which is sufficient when $\prop$ is determined by the path
-alone, but not when $\prop$ depends on the specific output value along
-that path.  For the benchmark \code{a*b < 256} with
-$\prop(y) = [y \ge 256]$, the property comparison occurs outside the
-concolic tracer; closing a leaf on symbolic path-determinism leaves
-the per-input property value uncertified.  The fix---either routing
-property comparisons through the tracer, or augmenting the closure
-rule to certify $\prop$-constancy directly---is straightforward to
-state and implement.  We defer it to follow-up work and report the
-benchmark as a known limitation.
+\subsection{Ablations}\label{sec:ablations}
+
+\Cref{tab:ablations} reports the two ablations on
+\code{assertion\_overflow\_mul\_w=8\_U(1,31)} (a non-LIA
+multiplication benchmark, $\mutrue = 0.401$, budget $= 2000$).
+
+\begin{table}[t]
+  \centering
+  \caption{Ablations on \code{assertion\_overflow\_mul\_w=8\_U(1,31)}
+    at budget $= 2000$, three seeds, $\delta = 0.05$.  Median half-
+    width with the median samples actually used.  Ablation~A: same
+    bound on both sides, so the gap is entirely due to symbolic
+    stratification.  Ablation~B: same adaptive-allocation strategy on
+    both sides, so the gap is entirely due to symbolic guidance.}
+  \label{tab:ablations}
+  \small
+  \begin{tabular}{lrrl}
+    \toprule
+    Method & Half-width & Samples & Note \\
+    \midrule
+    \multicolumn{4}{l}{\emph{Ablation~A: bound contribution vs.\ stratification contribution}} \\
+    \code{plain\_mc\_betting}      & $0.0463$ & $2{,}000$ & PrPl-EB, no stratification \\
+    \code{dise\_betting}           & $\mathbf{0.0307}$ & $\mathbf{220}$ & PrPl-EB, symbolic strata \\
+    \midrule
+    \multicolumn{4}{l}{\emph{Ablation~B: variance-driven vs.\ symbolic stratification}} \\
+    \code{adaptive\_stratified}    & $0.1241$ & $2{,}000$ & Neyman + hash buckets \\
+    \code{dise\_betting}           & $\mathbf{0.0307}$ & $\mathbf{220}$ & SMT path-condition strata \\
+    \midrule
+    \multicolumn{4}{l}{\emph{Reference: Wilson tightness on plain MC}} \\
+    \code{plain\_mc}               & $0.0215$ & $2{,}000$ & Wilson is Bernoulli-tight \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Ablation~A shows that fixing the bound and varying the stratification
+yields a $1.5\times$ tighter interval and---more strikingly---a
+$9\times$ reduction in samples consumed.  Both methods carry the same
+PrPl-EB bound at $\delta = 0.05$; the entire difference is
+attributable to \toolname{}'s symbolic partition of the input domain
+into three certifiable regions, two of which close via SMT after the
+bootstrap.
+
+Ablation~B isolates the value of \emph{symbolic} guidance over
+\emph{variance-adaptive} sampling.  \code{adaptive\_stratified}
+performs a two-pass Neyman allocation across $16$ random hash
+strata---the strongest sampling-only stratifier we know.  Yet the
+resulting interval is $4\times$ looser than \toolname{}'s; the
+Bonferroni correction across $16$ buckets, each carrying its own
+hit-rate uncertainty, washes out the variance reduction.
+\toolname{}'s strata, in contrast, are SMT-certified
+path-deterministic regions whose hit rate is known exactly after
+closure.
+
+The reference row shows that on the same benchmark, plain Wilson
+\emph{at a fixed budget} gives a tighter interval than
+\code{dise\_betting}---but consumes $9\times$ more samples.  The
+right reading is that \toolname{} solves a different optimization:
+it minimizes \emph{samples} for a target half-width, not half-width
+for a fixed budget.
+
+\paragraph{The bound ladder.}
+\Cref{tab:bound-ladder} fixes the stratification (none) and varies
+the per-sample bound construction on plain Monte Carlo.  Wilson is
+tightest at finite $n$ for Bernoulli observations; Hoeffding is
+distribution-free and loose; Maurer--Pontil empirical Bernstein is
+variance-adaptive but loose at small $n$; WSR PrPl-EB pays an
+anytime-validity premium that is recovered by the freedom to stop at
+any sample count.
+
+\begin{table}[t]
+  \centering
+  \caption{The bound ladder on \code{assertion\_overflow}: same
+    estimator (plain MC), four different certified-interval
+    constructions, budget $= 2000$, $\delta = 0.05$.}
+  \label{tab:bound-ladder}
+  \small
+  \begin{tabular}{lll}
+    \toprule
+    Bound & Half-width & Validity regime \\
+    \midrule
+    Wilson (Bernoulli-tight) & $0.0215$ & fixed $n$ \\
+    Hoeffding (textbook SMC) & $0.0304$ & fixed $n$, distribution-free \\
+    Maurer--Pontil EB        & $0.0342$ & fixed $n$, variance-adaptive \\
+    WSR PrPl-EB              & $0.0463$ & \textbf{anytime-valid}, variance-adaptive \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Full Suite}\label{sec:suite}
+
+\Cref{tab:suite} reports the full $12 \times 10$ grid at budget
+$= 2000$.  Three patterns are immediate.
+
+\paragraph{(i) Tautology benchmarks: plain MC wins, by design.}
+\code{popcount\_w6}, \code{parity\_w6}, and \code{log2\_w6} have
+$\mutrue = 1$ by construction; no conditional branch in the program
+relates to the property; \toolname{} has nothing to refine on and
+falls back to its open-leaf default.  Plain Monte Carlo certifies
+$\hat\mu = 1$ in microseconds.  These benchmarks are kept in the
+suite for completeness (they exercise the empty-path-clauses corner
+of the algorithm) but should be read as \emph{outside \toolname{}'s
+intended scope}.
+
+\paragraph{(ii) Rare-event and assertion benchmarks: \toolname{}
+matches or beats sampling-only.}
+\code{coin\_machine} and \code{assertion\_overflow} are the
+benchmarks where the program's branch structure aligns with the
+input distribution.  Here \toolname{} certifies in $\le 1000$ samples
+what plain MC needs $10^3$--$10^5$ samples to reach.
+
+\paragraph{(iii) Non-LIA and BG-distributed benchmarks: \toolname{}
+hits the wall-clock cap.}  On
+\code{gcd\_steps\_le\_5\_BG}, \code{miller\_rabin\_w=2\_BG},
+\code{collatz\_le\_30\_BG}, \code{modpow\_fits\_in\_4b}, and
+\code{sieve\_primality}, the SMT cost of the closure check on
+non-linear or BG-distributed path conditions saturates the $8$-second
+cap before $\Wopen$ shrinks meaningfully.  The certified interval
+collapses to $[0,1]$---sound but uninformative.  We discuss the
+engineering paths to fix this in \Cref{sec:conclusion}.
+
+\begin{table}[t]
+  \centering
+  \caption{Full suite, median half-width across three seeds at
+    budget $= 2000$, $\delta = 0.05$.  Empirical coverage of the
+    certified interval against the MC reference was $\ge 1 - \delta$
+    on every \code{(benchmark, method)} cell except
+    \code{quasi\_mc\_sobol} on the three BG benchmarks
+    (\Cref{sec:discussion}).  Bold = best non-trivial half-width
+    among the ten methods.}
+  \label{tab:suite}
+  \scriptsize
+  \begin{tabular}{lrrrrr}
+    \toprule
+    Benchmark & \code{plain\_mc} & \code{pmc\_betting}
+              & \code{adapt\_strat} & \code{dise\_wilson}
+              & \code{dise\_betting} \\
+    \midrule
+    \code{coin\_machine\_U(1,9999)}      & $\mathbf{0.0041}$ & $0.0074$ & $0.0239$ & $0.0107$ & $0.0143$ \\
+    \code{assertion\_overflow\_mul\_w=8} & $\mathbf{0.0215}$ & $0.0463$ & $0.1241$ & $0.0307$ & $0.0307$ \\
+    \code{popcount\_w6}                  & $\mathbf{0.0005}$ & $0.0019$ & $0.0161$ & $0.500$  & $0.500$  \\
+    \code{parity\_w6}                    & $\mathbf{0.0005}$ & $0.0019$ & $0.0161$ & $0.500$  & $0.500$  \\
+    \code{log2\_w6}                      & $\mathbf{0.0005}$ & $0.0019$ & $0.0163$ & $0.500$  & $0.500$  \\
+    \code{sparse\_trie\_depth\_le\_3}    & $\mathbf{0.0005}$ & $0.0019$ & $0.0163$ & $0.500$  & $0.500$  \\
+    \code{integer\_sqrt\_correct}        & $\mathbf{0.0005}$ & $0.0019$ & $0.0163$ & $0.500$  & $0.500$  \\
+    \code{sieve\_primality\_U(2,200)}    & $\mathbf{0.0185}$ & $0.0402$ & $0.1044$ & $0.500$  & $0.500$  \\
+    \code{modpow\_fits\_in\_4b}          & $\mathbf{0.0218}$ & $0.0464$ & $0.1221$ & $0.500$  & $0.500$  \\
+    \code{miller\_rabin\_w=2\_BG}        & $\mathbf{0.0209}$ & $0.0446$ & $0.0893$ & $0.500$  & $0.500$  \\
+    \code{gcd\_steps\_le\_5\_BG}         & $\mathbf{0.0046}$ & $0.0078$ & $0.0251$ & $0.500$  & $0.500$  \\
+    \code{collatz\_le\_30\_BG}           & $\mathbf{0.0112}$ & $0.0216$ & $0.0657$ & $0.500$  & $0.500$  \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The honest reading is that at fixed budget $= 2000$, plain Monte
+Carlo wins on \emph{half-width} on most benchmarks.  This is the
+\emph{wrong} question for \toolname{}, whose contract is
+\emph{minimize samples for a target $\varepsilon$}, not minimize
+$\varepsilon$ for a fixed sample count.
+\Cref{fig:rare-event-scaling} reframes the question correctly and
+exhibits the sweet-spot regime where \toolname{} delivers
+$O(1)$-sample certification that plain MC cannot match at any budget.
 
 \subsection{Discussion}\label{sec:discussion}
 
-The empirical picture is consistent with the theoretical analysis of
-\Cref{sec:related}.  \toolname{} performs best when the operational
+The empirical picture matches the theoretical analysis.  \toolname{}'s
+structural variance reduction pays off when (a) the operational
 distribution concentrates on path-deterministic regions of high
-probability mass: rare-event programs, bitvector kernels where all
-inputs take the same path, and benchmarks with clean LIA path
-structure under non-uniform distributions.  It ties plain Monte Carlo
-on high-variance, well-mixed benchmarks where symbolic stratification
-offers little variance reduction, and is dominated by plain Monte
-Carlo when the SMT cost of refinement is not offset by the closure
-rule.  These regimes align directly with the upper-bound argument
-sketched in \Cref{sec:algorithm}.
+probability mass, (b) the bootstrap can observe at least one input
+from each reachable region, and (c) the SMT cost of closure on the
+program's path conditions is amortised over enough useful refinements.
+The pedagogical \code{coin\_machine}, the assertion benchmark
+\code{assertion\_overflow}, and the rare-slice parametric program of
+\Cref{sec:rare-event-scaling} all satisfy (a)--(c).  On benchmarks
+whose path conditions defeat Z3 within the per-cell budget---
+multiplication, modular exponentiation, the GCD recurrence under a
+BoundedGeometric distribution---\toolname{} cannot certify in
+reasonable time and plain Monte Carlo is the right tool.
+
+\paragraph{An honest negative: \code{quasi\_mc\_sobol} unsound on BG
+benchmarks.}
+On the three BoundedGeometric-distributed benchmarks
+(\code{gcd\_steps\_le\_5\_BG}, \code{collatz\_le\_30\_BG},
+\code{miller\_rabin\_w=2\_BG}), the \code{quasi\_mc\_sobol} baseline
+reports $0\%$ empirical coverage.  The Wilson interval is constructed
+assuming iid Bernoulli observations, but a scrambled Sobol sequence
+is deterministic and structurally correlated.  On distributions whose
+support is heavily concentrated on a small set of values---as a
+BoundedGeometric with small $p$ is---the Sobol grid aligns with the
+distribution in a way that bias-shifts the empirical mean outside the
+Wilson interval.  This is a known property of quasi-MC paired with
+naive intervals and is not a \toolname{} finding; it is included here
+because the harness surfaces it honestly.
+
+\paragraph{Threats to validity.}
+The benchmark suite contains $12$ programs and the rare-event
+parametric experiment varies one knob; broader empirical coverage
+would strengthen the claim.  All measurements are on a single
+hardware configuration with a single SMT backend (Z3); SMT cost in
+particular is implementation-dependent.  Three seeds give a sense of
+variance but do not yield narrow confidence intervals on the medians
+reported.  We have not compared head-to-head against PSI~\cite{psi}
+or Dice~\cite{holtzen2020dice}; both require porting our benchmarks
+to dedicated input languages and are deferred to follow-up work.

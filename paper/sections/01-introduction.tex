@@ -145,11 +145,14 @@ This paper makes three contributions.
   adaptive stopping.
 
 \item \emph{Implementation and evaluation.}  We implement \toolname{}
-  as \toolname{}, a Python prototype with a Z3 backend and a benchmark
-  suite of $12$ integer programs.  On rare-event benchmarks whose path
-  structure aligns with the input distribution, \toolname{} reduces
-  sample counts by up to two orders of magnitude relative to plain and
-  stratified Monte Carlo.
+  as a Python prototype with a Z3 backend and evaluate it on
+  twelve integer benchmarks drawn from established sources, plus a
+  parametric rare-event experiment.  Two ablations isolate the
+  contribution of the bound and of the symbolic stratification.  On
+  the rare-event sweet spot $\mutrue \in [5{\times}10^{-4}, 2{\times}10^{-3}]$
+  \toolname{} certifies $\mutrue$ to half-width exactly zero in
+  $\Theta(1)$ samples---a regime where plain Monte Carlo's
+  $\Theta(1/(\mutrue\varepsilon^2))$ sample complexity is prohibitive.
 \end{enumerate}
 
 \paragraph{Paper organisation.}

@@ -1,39 +1,47 @@
 \begin{abstract}
-  We study the problem of \emph{distribution-aware reliability
-    estimation}: given a deterministic program $\prog$, a discrete
-  distribution $\dist$ over its inputs, and a Boolean property
-  $\prop$, certify a confidence interval for
-  $\Pr_{x \sim \dist}[\prop(\prog(x)) = 1]$ using as few program
-  evaluations as possible.  The central difficulty is that
-  rare-event programs defeat plain sampling, while symbolic
-  techniques fail on programs with non-linear arithmetic or
-  unbounded loops.
+  We study \emph{distribution-aware reliability estimation}: given a
+  deterministic program $\prog$, a discrete distribution $\dist$ over
+  its inputs, and a Boolean property $\prop$, certify a confidence
+  interval for $\Pr_{x \sim \dist}[\prop(\prog(x)) = 1]$ using as few
+  program evaluations as possible.  Rare-event programs defeat plain
+  sampling, while exact symbolic techniques fail on programs with
+  non-linear arithmetic, unbounded loops, or non-uniform input
+  distributions.
 
   We present \toolname{}, an adaptive partitioning algorithm that
-  bridges the two regimes.
-  \toolname{} maintains a frontier of path-condition regions and at
-  each step chooses between sampling and SMT-driven refinement under
-  a unified gain-per-cost criterion.  The certified half-width
-  decomposes as
-  $\Pr[|\muhat - \mutrue| \le \epsstat + \Wopen] \ge 1 - \delta$,
-  where $\epsstat$ aggregates per-region statistical uncertainty and
-  $\Wopen$ is the total probability mass of regions not yet
-  symbolically certified.  This decomposition is both the organising
-  principle of the algorithm and the content of its central
-  correctness theorem: every action reduces one term, and the
-  algorithm terminates when their sum falls below $\varepsilon$.
+  bridges the two regimes.  \toolname{} maintains a frontier of
+  path-condition regions and at each step selects between
+  \textsc{Sample} and SMT-driven \textsc{Refine} under a unified
+  gain-per-cost criterion.  The certified half-width decomposes as
+  $\Pr\!\bigl[|\muhat - \mutrue| \le \epsstat + \Wopen\bigr] \ge
+  1 - \delta$, where $\epsstat$ aggregates per-region statistical
+  uncertainty and $\Wopen$ is the total probability mass of regions
+  not yet symbolically certified.  This decomposition is
+  simultaneously the algorithm's correctness theorem and its
+  scheduler: \textsc{Sample} reduces $\epsstat$, \textsc{Refine}
+  reduces $\Wopen$, and the algorithm terminates as soon as their sum
+  drops below the target $\varepsilon$.
 
-  The per-region statistical bound uses the predictable-plug-in
-  empirical-Bernstein confidence sequence of Waudby-Smith and Ramdas
-  --- closed-form, variance-adaptive, and anytime-valid under
-  \toolname{}'s data-dependent stopping.  The closure rule is
+  The per-region statistical bound instantiates the predictable-plug-in
+  empirical-Bernstein confidence sequence of Waudby-Smith and
+  Ramdas---closed-form, variance-adaptive, and anytime-valid under
+  \toolname{}'s data-dependent stopping rule.  The closure rule is
   single-branch: a region is certified if and only if an SMT oracle
-  proves path-determinism, yielding a one-lemma soundness contract
-  with no sample-based fallback.
+  proves path-determinism, with no sample-based fallback, yielding
+  a one-lemma soundness contract.
 
-  We evaluate \toolname{}, a Python prototype with a
-  Z3 backend, and evaluate it on $12$ integer benchmarks.  On
-  rare-event programs whose path structure aligns with the input
-  distribution, \toolname{} reduces sample counts by up to two orders
-  of magnitude compared with plain and stratified Monte Carlo.
+  We implement \toolname{} as a Python prototype with a Z3 backend
+  and evaluate it on twelve integer benchmarks drawn from established
+  sources (Hacker's Delight, CLRS, the CERT~C Secure Coding standard,
+  the Collatz literature) plus a parametric rare-event program.  Two
+  ablations decompose the contribution of the bound and of the
+  stratification: holding the bound constant, \toolname{}'s symbolic
+  stratification reaches the same half-width with $9\times$ fewer
+  samples; holding the adaptive-allocation strategy constant,
+  symbolic guidance is $4\times$ tighter than variance-driven random
+  stratification.  On a parametric rare-event program, \toolname{}
+  certifies $\mutrue$ to half-width exactly zero in $\Theta(1)$
+  samples in the sweet-spot regime $\mutrue \in [5\times 10^{-4},
+  2\times 10^{-3}]$---a regime where plain Monte Carlo's
+  $\Theta(1/(\mutrue\varepsilon^2))$ sample complexity is prohibitive.
 \end{abstract}

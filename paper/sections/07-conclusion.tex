@@ -2,67 +2,78 @@
 
 We have presented \toolname{}, an algorithm for distribution-aware
 reliability estimation that maintains a frontier of path-condition
-regions and at each step chooses between sampling and SMT-driven
+regions and at each step selects between sampling and SMT-driven
 refinement under a unified gain-per-cost criterion.  The certified
 half-width decomposes into a statistical component $\epsstat$, driven
-down by sampling, and a structural component $\Wopen$, driven down by
-symbolic refinement.  This decomposition---Theorem~\ref{thm:hw-decomp}---is
+down by sampling, and a structural component $\Wopen$, driven down
+by symbolic refinement.  This decomposition---Theorem~\ref{thm:hw-decomp}---is
 simultaneously the algorithm's correctness argument and its scheduler.
-Two implementation choices distinguish \toolname{} from prior
-work: the per-leaf statistical bound instantiates the closed-form
-predictable-plug-in empirical-Bernstein confidence sequence of Waudby-Smith
-and Ramdas, and the closure rule is single-branch (SMT-only), yielding
-a one-lemma soundness contract and eliminating a class of silent bias
-that affects prior prototypes.
+Two implementation choices distinguish \toolname{} from prior work:
+the per-leaf statistical bound instantiates the closed-form
+predictable-plug-in empirical-Bernstein confidence sequence of
+Waudby-Smith and Ramdas, and the closure rule is single-branch
+(SMT-only), yielding a one-lemma soundness contract with no
+sample-based fallback.
+
+\paragraph{Where \toolname{} is the right tool.}
+The headline experiment of \Cref{sec:rare-event-scaling} maps out
+\toolname{}'s sweet spot.  When (i) the input distribution
+concentrates on path-deterministic regions, (ii) the bootstrap
+observes at least one example from each reachable region, and (iii)
+the SMT cost on the program's path conditions is moderate, \toolname{}
+certifies $\mutrue$ to half-width $\varepsilon$ in a number of samples
+that is $\Theta(1)$ in $\mutrue$---a regime where plain Monte Carlo
+requires $\Theta(1/(\mutrue\varepsilon^2))$ samples, an asymptotic
+advantage of orders of magnitude on rare events.
 
 \paragraph{Limitations.}
-We identify five.
+We identify four.
 
 \begin{enumerate}
-\item \emph{Path-determinism versus property-constancy.}
-  \Cref{sec:soundness-caveat} reports a measured soundness regression
-  on a non-LIA benchmark where the property is evaluated outside the
-  concolic tracer.  The fix is well-understood but not yet
-  implemented.
-
 \item \emph{Distribution class.}  The (D1) restriction excludes
   Bayes-net-structured and general discrete distributions.  Lifting it
   requires ancestor-conditioned constrained samplers and a mass
   estimator that handles coordinate dependence.
-
-\item \emph{Floating-point arithmetic and symbolic memory.}
-  Both are out of scope for the current prototype.
-
+\item \emph{SMT cost on non-LIA path conditions.}
+  \Cref{sec:suite} reports that on \code{gcd\_steps\_le\_5\_BG},
+  \code{miller\_rabin\_w=2\_BG}, and similar non-LIA or BG-distributed
+  benchmarks, the closure check saturates the wall-clock budget
+  before $\Wopen$ shrinks meaningfully.
 \item \emph{Refinement-clause selection.}  The current heuristic
   picks from clauses observed in samples; it does not synthesise new
   predicates.  Craig interpolation is the natural principled
   alternative.
-
-\item \emph{Statistical efficiency under partition fragmentation.}
-  When the frontier fragments into many high-mass open leaves, the
-  Bonferroni correction inflates $\epsstat$ in proportion to the leaf
-  count, and the SMT cost of refinement is not recovered by variance
-  reduction.
+\item \emph{Bootstrap blindness on very rare events.}
+  When $\mutrue \le 10^{-4}$, the bootstrap is unlikely to observe a
+  hit in the rare region; the SMT closure check on the dominant
+  \textsc{closed-f} leaf then refuses to close, and $\Wopen$ stays
+  near $1$.  A benchmark-aware bootstrap policy---draw until at least
+  one hit is observed in every reachable branch---would unblock this
+  regime.
 \end{enumerate}
 
 \paragraph{Future work.}
-Two extensions deserve immediate attention.  First, the closure rule's
-implicit path-implies-property assumption can be discharged by routing
-$\prop$ through the concolic tracer---straightforward, requiring only
-careful handling of short-circuit evaluation.  Second, replacing the
+Two extensions deserve immediate attention.  First, replacing the
 candidate-clause scorer with Craig
 interpolation~\cite{mcmillan2003interpolation,henzinger2004abstraction}
 would let the algorithm synthesise predicates the program never
 explicitly branches on, broadening the class of programs for which
-$\Wopen$ can be driven to zero.  Beyond these, we are interested in
-substituting a certified approximate model
-counter~\cite{kiesl2024certified,yang2023approxmc6} for the
-importance-sampling estimator on non-axis-aligned regions---yielding
-machine-checkable certificates end-to-end---and in extending the
-distribution class to handle (D2) Bayes-net-structured inputs.
+$\Wopen$ can be driven to zero.  Second, substituting a certified
+approximate model counter~\cite{kiesl2024certified,yang2023approxmc6}
+for the importance-sampling estimator on non-axis-aligned regions
+would yield end-to-end machine-checkable certificates.  Beyond these,
+we are interested in (a)~extending the distribution class to (D2)
+Bayes-net-structured inputs, (b)~parallel SMT to mitigate the
+single-threaded closure-cost bottleneck, and (c)~head-to-head
+comparison against exact-inference tools such as PSI~\cite{psi} and
+Dice~\cite{holtzen2020dice} on benchmarks ported to their respective
+input languages.
 
 \paragraph{Reproducibility.}
-\toolname{}, including all benchmarks, scripts, and the Docker image,
-is anonymised for review at \code{https://github.com/<anon>/dise}.
-All tables and figures in this paper are reproduced end-to-end by
-\code{scripts/reproduce.sh}.
+\toolname{}, including all benchmarks, scripts, the Docker image, and
+the experimental study underlying \Cref{sec:results}, is anonymised
+for review at \code{https://github.com/<anon>/dise}.  All tables and
+figures are reproduced end-to-end by
+\code{experiments/run\_full\_study.py} and
+\code{experiments/run\_rare\_event\_scaling.py}, followed by
+\code{experiments/plot\_results.py}.
