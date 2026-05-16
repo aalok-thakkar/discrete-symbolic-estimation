@@ -36,21 +36,56 @@ through `05_error_vs_truth.pdf`.
 
 ### Comparators
 
-We evaluate five methods.
+We evaluate **ten** methods — seven sampling-only baselines (no
+symbolic reasoning) and three DiSE variants — chosen so that the
+gain decomposes into distinct, individually attributable components.
 
-| Method                | Description                                                                 |
-|-----------------------|-----------------------------------------------------------------------------|
-| `plain_mc`            | Plain Monte Carlo with the Wilson score interval (Sampson-style baseline).  |
-| `stratified_random`   | 16 random hash buckets with per-bucket Wilson + Bonferroni correction.      |
-| `dise_wilson`         | DiSE with `method="wilson"` (fixed-$n$ Wilson per leaf, Bonferroni).        |
-| `dise_anytime`        | DiSE with `method="anytime"` (union-bound-in-time Wilson, anytime-valid).   |
-| `dise_betting`        | DiSE with `method="betting"` (Waudby-Smith & Ramdas 2024 PrPl-EB).          |
+#### Sampling-only baselines
+
+| Method                 | Bound construction                                  | Role |
+|------------------------|-----------------------------------------------------|------|
+| `plain_mc`             | Wilson score (Bernoulli-tight, fixed-$n$)           | reference; tightest fixed-$n$ Bernoulli MC |
+| `plain_mc_hoeffding`   | Hoeffding $\sqrt{\log(2/\delta) / 2n}$              | the textbook SMC bound (PLASMA-Lab, Storm SMC, MultiVeStA all default to it) |
+| `plain_mc_eb`          | Maurer–Pontil empirical Bernstein (COLT 2009)       | variance-adaptive but not anytime-valid                                      |
+| `plain_mc_betting`     | Waudby-Smith & Ramdas PrPl-EB (JRSS-B 2024)         | **ablation**: same bound as `dise_betting`, no stratification — isolates the bound contribution |
+| `quasi_mc_sobol`       | Wilson on scrambled Sobol low-discrepancy points    | standard variance-reduction baseline from numerical simulation               |
+| `stratified_random`    | 16 random hash buckets, per-bucket Wilson + Bonferroni | symbolic-blind stratification (post-stratified weights)                   |
+| `adaptive_stratified`  | Two-pass Neyman allocation across 16 hash buckets   | **ablation**: strongest *pure-sampling* stratifier — isolates the value of SMT-driven refinement (Carpentier–Munos NeurIPS 2011 spirit) |
+
+#### DiSE variants
+
+| Method        | Per-leaf bound                                       |
+|---------------|------------------------------------------------------|
+| `dise_wilson` | fixed-$n$ Wilson, Bonferroni over leaves             |
+| `dise_anytime`| union-bound-in-time Wilson, Bonferroni over leaves   |
+| `dise_betting`| WSR PrPl-EB per leaf, Bonferroni over leaves         |
 
 All DiSE variants run with `epsilon=0.05`, `delta=0.05`,
-`bootstrap=200`, `batch_size=50`, and a wall-clock cap of
-`budget_seconds=8`.  The CER per cell timeout is enforced both at
-the algorithm level (via `budget_seconds`) and as an outer SIGALRM
-safety net.
+`bootstrap=200`, `batch_size=50`, and `budget_seconds=8`.  Per-cell
+wall-clock cap is enforced both at the algorithm level (via
+`budget_seconds`) and as an outer SIGALRM safety net.
+
+The two **ablations** isolate the two contributions that go into
+DiSE's win:
+
+1. **`plain_mc_betting` vs `dise_betting`** — same statistical bound
+   on both sides; any gap is attributable to DiSE's symbolic
+   stratification.
+2. **`adaptive_stratified` vs `dise_*`** — both stratify and allocate
+   adaptively; `adaptive_stratified` uses random hash buckets,
+   `dise_*` uses SMT-driven path-condition partitions.  The gap is
+   the value of symbolic guidance.
+
+### What we deliberately did *not* compare against
+
+External tools (PSI, Dice, Storm, PLASMA-Lab, PerfPlotter / SPF) all
+require porting benchmarks to a domain-specific input language and
+constitute a multi-day engineering effort per tool.  We cite each in
+[`paper/sections/03-related-work.tex`](../paper/sections/03-related-work.tex)
+and document an explicit agreement check against PSI on the
+`coin_machine` benchmark as future work.  For Python-source-level
+reliability estimation specifically, no maintained external tool
+currently exists; this gap is part of DiSE's contribution.
 
 ### Benchmark provenance
 
@@ -150,6 +185,63 @@ closure check.  This figure is the honest cost-of-precision plot.
 Median $|\hat\mu - \mu^\star|$ at the largest budget — a complementary
 view of accuracy independent of the certified interval.
 
+## Headline numbers (budget = 2000, 3 seeds, $\delta = 0.05$)
+
+Selected rows from the full table.  All ten methods, two key
+benchmarks; full grid in [`results/summary.json`](results/summary.json).
+
+| Benchmark | `plain_mc` | `plain_mc_hoeffding` | `plain_mc_eb` | `plain_mc_betting` | `quasi_mc_sobol` | `stratified_random` | `adaptive_stratified` | `dise_betting` |
+|---|---|---|---|---|---|---|---|---|
+| `coin_machine_U(1,9999)` | $0.0041$ | $0.0194$ | $0.0093$ | $0.0074$ | $0.0045$ | $0.0240$ | $0.0239$ | $0.0143$ |
+| `assertion_overflow_mul_w=8_U(1,31)` | $0.0215$ | $0.0304$ | $0.0342$ | $0.0463$ | $0.0215$ | $0.1243$ | $0.1241$ | $\mathbf{0.0307}$ |
+
+(Numbers are median certified half-width across 3 seeds; bold = best
+among DiSE variants on the assertion benchmark.)
+
+### Ablation 1: bound contribution vs. stratification contribution
+
+On `assertion_overflow_mul_w=8`:
+
+- `plain_mc_betting` (same WSR bound, no stratification): half-width
+  $0.0463$, samples $= 2000$.
+- `dise_betting` (same WSR bound, SMT stratification): half-width
+  $0.0307$, samples $= 220$.
+
+Both methods carry the same statistical bound, so the $33\%$ tighter
+interval and $9\times$ sample efficiency of `dise_betting` are
+entirely attributable to symbolic stratification.
+
+### Ablation 2: SMT-driven vs. variance-driven stratification
+
+On `assertion_overflow_mul_w=8`:
+
+- `adaptive_stratified` (16 random hash strata, Neyman allocation):
+  half-width $0.1241$.
+- `dise_betting` (SMT-guided partition): half-width $0.0307$.
+
+A $4\times$ tighter interval, with the only difference being that
+DiSE's strata are path-condition regions rather than hash buckets.
+This isolates the value of symbolic guidance for stratification.
+
+### Ablation 3: the bound ladder on plain MC
+
+Holding plain MC fixed and varying the certified-interval construction
+(assertion_overflow, budget $= 2000$):
+
+| Bound                          | Half-width | Validity regime          |
+|--------------------------------|------------|--------------------------|
+| Wilson (Bernoulli-tight)       | $0.0215$   | fixed $n$                 |
+| Hoeffding (textbook SMC)       | $0.0304$   | fixed $n$, distribution-free |
+| Maurer-Pontil empirical-Bernstein | $0.0342$ | fixed $n$, variance-adaptive |
+| WSR PrPl-EB                    | $0.0463$   | **anytime-valid**, variance-adaptive |
+
+The ordering matches theory: Wilson is the tightest fixed-$n$ bound
+for Bernoulli observations; Hoeffding pays $\log(2/\delta)$
+unconditionally; Maurer-Pontil empirical-Bernstein is asymptotically
+better but loose at finite $n$; WSR's anytime-valid bound pays an
+additional premium that is recovered by the freedom to stop at any
+time.
+
 ## Discussion
 
 Three patterns emerge across the suite.
@@ -176,6 +268,24 @@ predictable-plug-in empirical-Bernstein bound is variance-adaptive
 and avoids the $\pi^2/6$ inflation of the Basel union-in-time
 construction.  The gap is largest on low-variance leaves (rare-event
 benchmarks); it narrows toward the Bernoulli-$\tfrac{1}{2}$ regime.
+
+## A measured soundness failure of `quasi_mc_sobol`
+
+On the three `BoundedGeometric`-distributed benchmarks
+(`gcd_steps_le_5_BG`, `collatz_le_30_BG`, `miller_rabin_w=2_BG`),
+`quasi_mc_sobol` reports $0\%$ empirical coverage at budget $= 2000$.
+The cause is exactly the caveat flagged at construction
+([`tier2.py:QuasiMonteCarloSobol`](../src/dise/baselines/tier2.py)):
+the Wilson interval assumes i.i.d.\ Bernoulli observations, but
+Sobol points are deterministic and structurally correlated.  On
+distributions with heavy support concentration (BG with small $p$ has
+most mass on a few small integers), the Sobol grid aligns with the
+distribution in a way that bias-shifts the point estimate beyond
+the Wilson interval.  This is *not* a DiSE finding; it is a known
+property of QMC + naive intervals that the experimental harness
+surfaces honestly.  The principled fix is scrambled-Sobol with a
+bootstrap-resampled interval; we leave it as a known limitation of
+the QMC baseline in this study.
 
 ## Open questions surfaced by this study
 

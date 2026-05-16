@@ -328,9 +328,26 @@ class DiSEBaseline(Baseline):
 
 
 __all__ = [
+    "AdaptiveStratifiedMC",
     "Baseline",
     "BaselineResult",
     "DiSEBaseline",
     "PlainMonteCarlo",
+    "PlainMonteCarloBetting",
+    "PlainMonteCarloEmpiricalBernstein",
+    "PlainMonteCarloHoeffding",
+    "QuasiMonteCarloSobol",
     "StratifiedRandomMC",
 ]
+
+
+# Tier-2 baselines live in their own module to keep this file readable.
+# Imported at the bottom because they depend on the protocol declared
+# above.
+from .tier2 import (  # noqa: E402  (intentional late import)
+    AdaptiveStratifiedMC,
+    PlainMonteCarloBetting,
+    PlainMonteCarloEmpiricalBernstein,
+    PlainMonteCarloHoeffding,
+    QuasiMonteCarloSobol,
+)

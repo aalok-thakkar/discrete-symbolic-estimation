@@ -45,7 +45,16 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from dise.baselines import DiSEBaseline, PlainMonteCarlo, StratifiedRandomMC
+from dise.baselines import (
+    AdaptiveStratifiedMC,
+    DiSEBaseline,
+    PlainMonteCarlo,
+    PlainMonteCarloBetting,
+    PlainMonteCarloEmpiricalBernstein,
+    PlainMonteCarloHoeffding,
+    QuasiMonteCarloSobol,
+    StratifiedRandomMC,
+)
 from dise.benchmarks import get_benchmark, list_benchmarks
 from dise.experiment import RunResult, ground_truth_mc, run_method
 
@@ -98,16 +107,35 @@ PER_CELL_TIMEOUT_S = 8.0
 def _make_methods(
     epsilon: float = 0.05, budget_seconds: float = PER_CELL_TIMEOUT_S
 ) -> list:
-    """The five comparators evaluated in this study.
+    """The ten comparators evaluated in this study.
 
-    DiSE variants share the same scheduler but differ in the per-leaf
-    bound construction (``method`` kwarg). All DiSE variants get a
-    ``budget_seconds`` cap so they terminate cleanly when the strict
-    closure rule can't make progress on a benchmark.
+    Sampling-only baselines (no symbolic reasoning):
+      - ``plain_mc``                — Wilson interval (Bernoulli-tight)
+      - ``plain_mc_hoeffding``      — textbook SMC bound
+      - ``plain_mc_eb``             — Maurer-Pontil empirical Bernstein
+      - ``plain_mc_betting``        — WSR PrPl-EB (same bound as DiSE,
+                                       no stratification)  [ablation]
+      - ``quasi_mc_sobol``          — Sobol low-discrepancy points + Wilson
+      - ``stratified_random``       — 16 random hash strata
+      - ``adaptive_stratified``     — 2-pass Neyman-allocation stratification
+                                       (Carpentier-Munos 2011 spirit)
+
+    DiSE variants (share the scheduler, differ in the per-leaf bound):
+      - ``dise_wilson``  — fixed-n Wilson
+      - ``dise_anytime`` — union-bound-in-time Wilson
+      - ``dise_betting`` — WSR PrPl-EB  [recommended]
+
+    All DiSE variants get a ``budget_seconds`` cap so they terminate
+    cleanly when the strict closure rule can't make progress.
     """
     methods = [
         PlainMonteCarlo(),
+        PlainMonteCarloHoeffding(),
+        PlainMonteCarloEmpiricalBernstein(),
+        PlainMonteCarloBetting(),
+        QuasiMonteCarloSobol(),
         StratifiedRandomMC(n_strata=16),
+        AdaptiveStratifiedMC(n_strata=16, pilot_frac=0.3),
     ]
     for dise_method in ("wilson", "anytime", "betting"):
         b = DiSEBaseline(
@@ -264,10 +292,11 @@ def main() -> int:
     bench_names = args.benchmarks or [name for name, _ in BENCHMARKS]
     citations = dict(BENCHMARKS)
 
+    n_methods = len(_make_methods())
     print(f"# DiSE experimental study")
-    print(f"# {len(bench_names)} benchmarks x {len(_make_methods())} methods x "
+    print(f"# {len(bench_names)} benchmarks x {n_methods} methods x "
           f"{len(budgets)} budgets x {len(seeds)} seeds "
-          f"= {len(bench_names) * 5 * len(budgets) * len(seeds)} cells")
+          f"= {len(bench_names) * n_methods * len(budgets) * len(seeds)} cells")
     print(f"# budgets: {budgets}")
     print(f"# seeds  : {seeds}")
     print(f"# delta  : {DELTA}")

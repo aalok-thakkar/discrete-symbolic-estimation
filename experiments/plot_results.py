@@ -34,26 +34,41 @@ FIG_DIR = ROOT / "experiments" / "figures"
 
 METHOD_ORDER = [
     "plain_mc",
+    "plain_mc_hoeffding",
+    "plain_mc_eb",
+    "plain_mc_betting",
+    "quasi_mc_sobol",
     "stratified_random",
+    "adaptive_stratified",
     "dise_wilson",
     "dise_anytime",
     "dise_betting",
 ]
 
 METHOD_COLOURS = {
-    "plain_mc":          "#7f7f7f",   # grey
-    "stratified_random": "#bcbd22",   # mustard
-    "dise_wilson":       "#1f77b4",   # blue
-    "dise_anytime":      "#2ca02c",   # green
-    "dise_betting":      "#d62728",   # red
+    "plain_mc":            "#9c9c9c",  # grey
+    "plain_mc_hoeffding":  "#aec7e8",  # light blue
+    "plain_mc_eb":         "#ffbb78",  # light orange
+    "plain_mc_betting":    "#98df8a",  # light green
+    "quasi_mc_sobol":      "#c5b0d5",  # light purple
+    "stratified_random":   "#bcbd22",  # mustard
+    "adaptive_stratified": "#8c564b",  # brown
+    "dise_wilson":         "#1f77b4",  # blue
+    "dise_anytime":        "#2ca02c",  # green
+    "dise_betting":        "#d62728",  # red
 }
 
 METHOD_MARKERS = {
-    "plain_mc":          "o",
-    "stratified_random": "s",
-    "dise_wilson":       "^",
-    "dise_anytime":      "v",
-    "dise_betting":      "D",
+    "plain_mc":            "o",
+    "plain_mc_hoeffding":  "o",
+    "plain_mc_eb":         "o",
+    "plain_mc_betting":    "o",
+    "quasi_mc_sobol":      "*",
+    "stratified_random":   "s",
+    "adaptive_stratified": "P",
+    "dise_wilson":         "^",
+    "dise_anytime":        "v",
+    "dise_betting":        "D",
 }
 
 
