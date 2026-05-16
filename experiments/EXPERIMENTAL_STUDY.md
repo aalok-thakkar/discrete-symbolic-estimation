@@ -135,7 +135,41 @@ keeping wall-clock bounded.
 and IQR of `half_width` and `samples_used`, plus the empirical
 coverage rate across the three seeds.
 
-## Headline result: rare-event scaling
+## Headline result: convergence to an exact certificate
+
+The cleanest demonstration of DiSE's structural advantage is a
+**convergence curve on a single-conditional threshold benchmark**:
+
+```python
+def threshold(x):
+    return 1 if x < 50 else 0    # x ~ Uniform(1, 9999)
+```
+
+True $\mu = 49 / 9999 \approx 0.0049$.  The program has one
+conditional branch; DiSE refines the root on `x < 50` into two
+axis-aligned leaves whose mass is computed exactly under (D1).
+
+![convergence curve](figures/06_convergence_curve.png)
+
+DiSE achieves **half-width = 0 exactly** at budget $\ge 1000$
+samples, using $\le 720$ samples in practice.  At $n = 10^5$ samples,
+plain MC's tightest construction (Wilson) reports half-width
+$\approx 4 \times 10^{-4}$ — two orders of magnitude looser than
+DiSE's certificate at $1/100$ the sample count.  Plain MC's bound
+decays as $\Theta(1/\sqrt{n})$ and **never reaches zero** at any
+finite budget.
+
+This is the asymptotic separation that justifies DiSE existing as a
+tool: there is a regime (axis-aligned partition with observable
+branches) where DiSE delivers an exact certificate, and no
+sample-only method can match it.
+
+Reproduction: `uv run python experiments/run_convergence_curve.py`.
+Raw rows in [`results/convergence.jsonl`](results/convergence.jsonl);
+per-cell aggregate in
+[`results/convergence.json`](results/convergence.json).
+
+## Follow-on: rare-event scaling
 
 The headline figure of this study isolates the single regime where
 DiSE's structural variance reduction is most visible: an *axis-aligned

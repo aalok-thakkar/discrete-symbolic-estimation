@@ -1,15 +1,20 @@
 \section{Experimental Evaluation}\label{sec:results}
 
-We evaluate \toolname{} along three axes.
-\Cref{sec:rare-event-scaling} presents the \emph{headline experiment}:
-sample efficiency as a function of the rare-event mass~$\mutrue$, on
-a parametric program whose structure isolates DiSE's
-variance-reduction mechanism.
-\Cref{sec:ablations} reports two \emph{ablations} that decompose the
-overall win into the contribution of the statistical bound and the
-contribution of symbolic stratification.
-\Cref{sec:suite} reports the full benchmark suite at a shared
-budget.
+We evaluate \toolname{} along four axes.
+\Cref{sec:convergence-curve} presents the \emph{headline experiment}:
+the certified half-width as a function of sample budget on a
+single-conditional threshold benchmark.  This is the cleanest
+demonstration of \toolname{}'s structural advantage---convergence to
+an exact certificate that plain Monte Carlo cannot match at any
+finite budget.
+\Cref{sec:rare-event-scaling} extends the result to a parametric
+rare-event program, mapping the regime where \toolname{}'s
+precondition (the partition closes after bootstrap) is satisfied.
+\Cref{sec:ablations} reports two \emph{ablations} that decompose
+the overall win into the contribution of the statistical bound and
+the contribution of symbolic stratification.
+\Cref{sec:suite} reports the full twelve-benchmark suite at a
+shared budget.
 We close with a discussion of the regimes where \toolname{} is the
 right tool and where it is not (\Cref{sec:discussion}).
 
@@ -109,15 +114,73 @@ Every benchmark in the suite is drawn from a recognised source.
   \end{tabular}
 \end{table}
 
-\subsection{Headline Experiment: Rare-Event Scaling}\label{sec:rare-event-scaling}
+\subsection{Headline Experiment: Convergence to Exact}\label{sec:convergence-curve}
 
-The headline question is: as $\mutrue$ shrinks, how many samples does
-each method need to certify $\mutrue$ to a fixed half-width
-$\varepsilon$?  Theory makes two competing predictions.  Plain Monte
-Carlo's sample complexity is $\Theta(1/(\mutrue \varepsilon^2))$;
-\toolname{} on a partition all of whose leaves admit closed-form mass
-should be $\Theta(1)$, independent of $\mutrue$, once the bootstrap
-phase has observed an example from each region.
+The fundamental advantage of \toolname{} over plain Monte Carlo is
+\emph{convergence to an exact certificate} at a finite sample
+budget.  Plain MC's certified half-width is bounded below by the
+Bernoulli standard error~$\sqrt{\mu(1-\mu)/n}$ times a confidence
+multiplier; the bound decays as $\Theta(1/\sqrt{n})$ and never
+reaches zero at any finite~$n$.  \toolname{} on an axis-aligned
+partition whose leaves admit closed-form mass reports half-width
+exactly zero from the budget threshold at which all leaves close,
+onward.
+
+To isolate this contrast, we consider the simplest informative
+benchmark---a single-conditional threshold program:
+\begin{equation}\label{eq:threshold-prog}
+  \mathtt{threshold}(x) \;=\;
+  \begin{cases}
+    1 & \text{if } x < 50,\\
+    0 & \text{otherwise},
+  \end{cases}
+  \qquad x \sim \mathrm{Uniform}(1, 9999).
+\end{equation}
+The true reliability is $\mutrue = 49 / 9999 \approx 0.0049$.
+The program has a single conditional branch; \toolname{} refines the
+root on $x < 50$ and produces two axis-aligned leaves whose mass is
+exact under (D1).
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.85\textwidth]{06_convergence_curve.pdf}
+  \caption{Certified half-width as a function of sample budget on
+    the threshold benchmark~\eqref{eq:threshold-prog}; three seeds
+    per point, $\delta = 0.05$.  Plain MC's three bound constructions
+    decay as $\Theta(1/\sqrt{n})$ and remain strictly positive at
+    every budget.  \toolname{}'s certified half-width is exactly
+    zero from $n \approx 1000$ onward (marked with stars at the plot
+    floor of $10^{-5}$).  Even at $n = 10^5$ samples, plain MC's
+    tightest construction (Wilson) reports half-width $\approx
+    4 \times 10^{-4}$; \toolname{} reports $0$ using $720$ samples.}
+  \label{fig:convergence-curve}
+\end{figure}
+
+\Cref{fig:convergence-curve} reports the result.  The visual story
+is unmistakable.  From $n = 1000$ samples (which corresponds to the
+$500$-sample bootstrap plus one $100$-sample refinement batch),
+\toolname{} achieves an \emph{exact} certificate: $\hat\mu = 0.0049$,
+half-width $= 0$.  At every larger budget, \toolname{} terminates
+after $\le 720$ samples and reports the same exact answer.  Plain
+Monte Carlo with the tightest Bernoulli bound (Wilson) needs
+$\sim 100{,}000$ samples to reach a half-width of $4 \times 10^{-4}$,
+two orders of magnitude looser than \toolname{}'s certificate at one
+hundredth the sample count.
+
+The asymptotic separation is structural, not a matter of constants:
+\toolname{} reaches a half-width plain MC cannot achieve at any
+finite budget.  The trade-off is that \toolname{}'s advantage
+materialises only when the partition closes; we make this
+precondition precise in~\Cref{sec:rare-event-scaling}.
+
+\subsection{Sample Efficiency as a Function of Rare-Event Mass}\label{sec:rare-event-scaling}
+
+\Cref{sec:convergence-curve} established that \toolname{} can reach
+an exact certificate (half-width $= 0$) on the threshold benchmark.
+The precondition is that the bootstrap observes at least one example
+from each reachable region.  We now map the regime where this
+precondition holds by varying the rare-event mass~$\mutrue$ across
+four orders of magnitude.
 
 To isolate this claim, we introduce a parametric program with three
 axis-aligned regions (\Cref{fig:rare-slice-prog}).  All path

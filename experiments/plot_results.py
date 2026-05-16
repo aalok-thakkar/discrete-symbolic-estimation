@@ -313,6 +313,73 @@ def plot_error(summary: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
+def plot_convergence_curve() -> None:
+    """Half-width vs sample budget on a single fixed-mu benchmark.
+
+    The visual story: \\toolname{} achieves half-width exactly zero
+    at the budget threshold where refinement closes the partition,
+    and stays at zero from then onward.  Plain MC's certified half-
+    width decays as $\\Theta(1/\\sqrt{n})$ and never reaches zero.
+
+    For the log y-axis, exact-zero half-widths are replotted at a
+    small floor (1e-5) and overlaid with a marker indicating "exact".
+    """
+    summary_path = RESULTS_DIR / "convergence.json"
+    if not summary_path.exists():
+        print("  convergence.json not found; skipping")
+        return
+    summary = json.loads(summary_path.read_text())
+    rows = summary["rows"]
+    meta = summary["metadata"]
+
+    methods = sorted({r["method"] for r in rows},
+                     key=lambda m: METHOD_ORDER.index(m) if m in METHOD_ORDER else 99)
+    fig, ax = plt.subplots(figsize=(7.0, 4.8))
+    floor = 1e-5  # plot floor for hw = 0
+
+    for method in methods:
+        mrs = sorted([r for r in rows if r["method"] == method],
+                     key=lambda r: r["budget"])
+        if not mrs:
+            continue
+        xs = [r["budget"] for r in mrs]
+        ys = [max(r["median_half_width"], floor) for r in mrs]
+        exact = [r["median_half_width"] == 0.0 for r in mrs]
+        ax.plot(xs, ys,
+                color=METHOD_COLOURS.get(method, "black"),
+                marker=METHOD_MARKERS.get(method, "o"),
+                label=method, linewidth=1.8, markersize=6)
+        # Mark "exact zero" points with a special star overlay so the
+        # reader sees that the y-coordinate is a plotting artifact.
+        for x, y, e in zip(xs, ys, exact):
+            if e:
+                ax.scatter([x], [y], s=180, marker="*",
+                           facecolor=METHOD_COLOURS.get(method, "black"),
+                           edgecolor="black", linewidth=1.0, zorder=10)
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.axhline(floor, color="black", linestyle=":", lw=0.7, alpha=0.6)
+    ax.set_xlabel(r"sample budget  $n$")
+    ax.set_ylabel(r"median certified half-width  (log scale)")
+    ax.set_title(
+        r"Convergence on the threshold benchmark "
+        rf"($\mu = {meta['mu_truth']:.4f}$, $\delta = {meta['delta']}$)"
+    )
+    ax.grid(True, alpha=0.3, which="both")
+    # Star marker = exact-zero certificate (the y-coordinate is plot floor).
+    from matplotlib.lines import Line2D
+    star_handle = Line2D([0], [0], marker="*", linestyle="",
+                          markerfacecolor=METHOD_COLOURS.get("dise_betting", "red"),
+                          markeredgecolor="black", markersize=10,
+                          label="hw $=0$ (plot floor)")
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(handles + [star_handle], labels + [star_handle.get_label()],
+              fontsize=9, loc="lower left", frameon=True)
+    fig.tight_layout()
+    _save(fig, "06_convergence_curve")
+
+
 def plot_rare_event_scaling() -> None:
     """The headline log-log: samples-to-epsilon vs true rare-event mass.
 
@@ -388,12 +455,14 @@ def main() -> int:
 
     if args.rare_event_only:
         plot_rare_event_scaling()
+        plot_convergence_curve()
         return 0
 
     summary = _load_summary()
     print(f"# {len(summary['summary_rows'])} summary rows; generating figures")
 
     plot_rare_event_scaling()
+    plot_convergence_curve()
     plot_halfwidth_vs_budget(summary)
     plot_sample_efficiency(summary)
     plot_coverage(summary)
