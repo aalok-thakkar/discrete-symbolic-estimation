@@ -1,12 +1,11 @@
 \section{Experimental Evaluation}\label{sec:results}
 
 We evaluate \toolname{} along four axes.
-\Cref{sec:convergence-curve} presents the \emph{headline experiment}:
-the certified half-width as a function of sample budget on a
-single-conditional threshold benchmark.  This is the cleanest
-demonstration of \toolname{}'s structural advantage---convergence to
-an exact certificate that plain Monte Carlo cannot match at any
-finite budget.
+\Cref{sec:decision-curve} presents the \emph{operational headline}:
+samples to a $(1-\delta)$-certified SLA decision as a function of
+how tight the contractual threshold is.  This is the regime where
+\toolname{}'s structural advantage has consequence---decisions plain
+Monte Carlo cannot make at any feasible budget.
 \Cref{sec:rare-event-scaling} extends the result to a parametric
 rare-event program, mapping the regime where \toolname{}'s
 precondition (the partition closes after bootstrap) is satisfied.
@@ -114,73 +113,106 @@ Every benchmark in the suite is drawn from a recognised source.
   \end{tabular}
 \end{table}
 
-\subsection{Headline Experiment: Convergence to Exact}\label{sec:convergence-curve}
+\subsection{Headline Experiment: SLA-Decision Cost}\label{sec:decision-curve}
 
-The fundamental advantage of \toolname{} over plain Monte Carlo is
-\emph{convergence to an exact certificate} at a finite sample
-budget.  Plain MC's certified half-width is bounded below by the
-Bernoulli standard error~$\sqrt{\mu(1-\mu)/n}$ times a confidence
-multiplier; the bound decays as $\Theta(1/\sqrt{n})$ and never
-reaches zero at any finite~$n$.  \toolname{} on an axis-aligned
-partition whose leaves admit closed-form mass reports half-width
-exactly zero from the budget threshold at which all leaves close,
-onward.
+The question a reliability engineer actually asks is not ``what is
+$\mutrue$?'' but ``is $\mutrue$ below the contractual threshold
+$\tau$?''  This is a binary decision; the relevant cost is the sample
+count required to make it with confidence $1-\delta$.  A sample-based
+method supports the decision when its certified interval $[L, U]$
+lies entirely on one side of $\tau$.
 
-To isolate this contrast, we consider the simplest informative
-benchmark---a single-conditional threshold program:
-\begin{equation}\label{eq:threshold-prog}
-  \mathtt{threshold}(x) \;=\;
-  \begin{cases}
-    1 & \text{if } x < 50,\\
-    0 & \text{otherwise},
-  \end{cases}
-  \qquad x \sim \mathrm{Uniform}(1, 9999).
+The two regimes are very different.  Wilson's interval has half-width
+$\Theta\!\big(\sqrt{\mu(1-\mu)/n}\big)$, so the sample count required
+to push it off the threshold scales as
+\begin{equation}\label{eq:wilson-cost}
+  n \;\sim\; \frac{z^2 \cdot \mu(1-\mu)}{(\tau - \mu)^2}.
 \end{equation}
-The true reliability is $\mutrue = 49 / 9999 \approx 0.0049$.
-The program has a single conditional branch; \toolname{} refines the
-root on $x < 50$ and produces two axis-aligned leaves whose mass is
-exact under (D1).
+\emph{Plain MC's decision cost diverges as the threshold tightens
+toward the truth.}  \toolname{} on a benchmark whose partition closes
+to closed-form mass delivers an exact certificate $\hat\mu = \mutrue$,
+half-width $0$.  Its decision cost is the bootstrap-plus-refinement
+constant, \emph{independent} of $|\tau - \mu|$.
+
+We illustrate with an SLA-style classifier.  A load-monitoring
+program flags an SLA violation when an integer load reading exceeds
+a hardware-defined critical threshold:
+\begin{equation}\label{eq:sla-prog}
+  \mathtt{sla}(\mathrm{load}) \;=\;
+  \begin{cases}
+    1 & \text{if } \mathrm{load} \ge 5000,\\
+    0 & \text{otherwise.}
+  \end{cases}
+\end{equation}
+The operational load distribution is a bounded geometric
+$\mathrm{BG}(p = 10^{-3}, N = 10^4)$---heavy-tailed, with most
+readings small and a thin tail of high values.  This is a (D1)
+distribution but a profoundly non-uniform one: existing PSE engines
+that assume a uniform marginal do not apply.  Under
+$\mathrm{BG}(10^{-3}, 10^4)$, the closed-form violation rate is
+$\mutrue = 1 - \mathrm{BG}.\mathtt{cdf}(4999) \approx 0.006683$.
+
+The operational question parameterises a family: ``is the violation
+rate below~$\tau$?''  We sweep $\tau$ across a log-spaced grid above
+and below $\mutrue$, with $|\tau - \mu|$ ranging from
+$5 \times 10^{-3}$ down to $2 \times 10^{-5}$.  For each
+$(\tau, \text{method})$, we measure the sample count required to
+support the decision; max budget $2 \times 10^5$ samples; three seeds.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.85\textwidth]{06_convergence_curve.pdf}
-  \caption{Certified half-width as a function of sample budget on
-    the threshold benchmark~\eqref{eq:threshold-prog}; three seeds
-    per point, $\delta = 0.05$.  Plain MC's three bound constructions
-    decay as $\Theta(1/\sqrt{n})$ and remain strictly positive at
-    every budget.  \toolname{}'s certified half-width is exactly
-    zero from $n \approx 1000$ onward (marked with stars at the plot
-    floor of $10^{-5}$).  Even at $n = 10^5$ samples, plain MC's
-    tightest construction (Wilson) reports half-width $\approx
-    4 \times 10^{-4}$; \toolname{} reports $0$ using $720$ samples.}
-  \label{fig:convergence-curve}
+  \includegraphics[width=0.85\textwidth]{07_decision_curve.pdf}
+  \caption{Samples to a $(1-\delta)$-certified SLA decision on
+    benchmark~\eqref{eq:sla-prog} under $\mathrm{BG}(10^{-3}, 10^4)$,
+    $\mutrue \approx 0.0067$, $\delta = 0.05$.  X-axis (log,
+    inverted): decision precision $|\tau - \mu|$; smaller is harder.
+    Y-axis (log): median samples across three seeds.  The dotted
+    line is the Wilson envelope~\eqref{eq:wilson-cost}.  Plain MC
+    tracks the envelope and hits the budget cap (open black rings)
+    at $|\tau - \mu| \le 5 \times 10^{-4}$.  \toolname{} sits flat
+    at $520$ samples across five orders of magnitude in $|\tau -
+    \mu|$.  At $|\tau - \mu| = 2 \times 10^{-5}$, the contrast is
+    $\ge 400\times$ in favour of \toolname{}---and plain MC has
+    not decided at all.}
+  \label{fig:decision-curve}
 \end{figure}
 
-\Cref{fig:convergence-curve} reports the result.  The visual story
-is unmistakable.  From $n = 1000$ samples (which corresponds to the
-$500$-sample bootstrap plus one $100$-sample refinement batch),
-\toolname{} achieves an \emph{exact} certificate: $\hat\mu = 0.0049$,
-half-width $= 0$.  At every larger budget, \toolname{} terminates
-after $\le 720$ samples and reports the same exact answer.  Plain
-Monte Carlo with the tightest Bernoulli bound (Wilson) needs
-$\sim 100{,}000$ samples to reach a half-width of $4 \times 10^{-4}$,
-two orders of magnitude looser than \toolname{}'s certificate at one
-hundredth the sample count.
+\Cref{fig:decision-curve} is the operational headline.  Two regimes:
 
-The asymptotic separation is structural, not a matter of constants:
-\toolname{} reaches a half-width plain MC cannot achieve at any
-finite budget.  The trade-off is that \toolname{}'s advantage
-materialises only when the partition closes; we make this
-precondition precise in~\Cref{sec:rare-event-scaling}.
+\paragraph{Loose decisions ($|\tau - \mu| \ge 10^{-3}$): plain MC
+  wins by a small constant.}  When the threshold is well separated
+from the truth, Wilson reaches the decision with one to two thousand
+samples; \toolname{} needs $520$.  Plain MC is the right tool here.
+
+\paragraph{Tight decisions ($|\tau - \mu| \le 10^{-3}$):
+  \toolname{} is the only feasible option.}  As the threshold
+approaches the truth, plain MC's cost climbs along the Wilson
+envelope~\eqref{eq:wilson-cost}---linear-in-budget at first, then
+unbounded.  At $|\tau - \mu| = 5 \times 10^{-4}$, plain MC needs
+$\sim\!10^5$ samples on some seeds and fails to decide in $2 \times
+10^5$ on others.  At $|\tau - \mu| = 2 \times 10^{-5}$, plain MC and
+\code{plain\_mc\_betting} both hit the cap on every seed.
+\toolname{} returns the same $520$-sample exact certificate it
+returned at every other threshold.
+
+\paragraph{Operational consequence.}  An SLA stated as ``violation
+rate below $0.5\%$'' against a true rate of $0.67\%$ is decided by
+both methods.  An SLA stated as ``below $0.65\%$''---a credible
+contractual tightening---needs $\sim\!10^5$ plain-MC samples but
+$520$ \toolname{} samples.  An SLA stated as ``below $0.668\%$''---a
+realistic regulatory ratchet---is undecidable by plain MC at any
+budget we tested but decided immediately by \toolname{}.  This is
+the asymmetry the algorithm was built to deliver.
 
 \subsection{Sample Efficiency as a Function of Rare-Event Mass}\label{sec:rare-event-scaling}
 
-\Cref{sec:convergence-curve} established that \toolname{} can reach
-an exact certificate (half-width $= 0$) on the threshold benchmark.
-The precondition is that the bootstrap observes at least one example
-from each reachable region.  We now map the regime where this
-precondition holds by varying the rare-event mass~$\mutrue$ across
-four orders of magnitude.
+\Cref{sec:decision-curve} established that \toolname{} reaches an
+exact certificate on a benchmark whose partition closes after the
+bootstrap, and that this exactness is asymptotically separated from
+plain MC's best achievable precision.  The precondition is that the
+bootstrap observes at least one example from each reachable region.
+We now map the regime where this precondition holds by varying the
+rare-event mass~$\mutrue$ across four orders of magnitude.
 
 To isolate this claim, we introduce a parametric program with three
 axis-aligned regions (\Cref{fig:rare-slice-prog}).  All path

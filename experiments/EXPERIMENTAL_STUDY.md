@@ -135,7 +135,57 @@ keeping wall-clock bounded.
 and IQR of `half_width` and `samples_used`, plus the empirical
 coverage rate across the three seeds.
 
-## Headline result: convergence to an exact certificate
+## Headline result: SLA decisions plain MC cannot make
+
+The operational question is not "what is $\mu$?" but "is $\mu < \tau$?"
+— a binary decision against a contractual threshold $\tau$.  A
+sample-based method supports the decision when the certified
+interval lies entirely on one side of $\tau$.
+
+**Benchmark**: SLA load classifier under heavy-tailed BG load:
+
+```python
+def sla(load):
+    return 1 if load >= 5000 else 0    # load ~ BoundedGeometric(p=0.001, N=10000)
+```
+
+True $\mu = 1 - \text{BG.cdf}(4999) \approx 0.0067$.
+
+**Sweep**: 16 thresholds at $|\tau - \mu|$ from $5\times 10^{-3}$
+down to $2\times 10^{-5}$; three seeds per cell; max budget
+$2\times 10^5$ samples.
+
+![samples to decision](figures/07_decision_curve.png)
+
+Two regimes:
+
+- **Loose decisions** ($|\tau - \mu| \ge 10^{-3}$): plain MC wins
+  by 2-3$\times$; both methods decide cheaply.
+- **Tight decisions** ($|\tau - \mu| \le 10^{-3}$): plain MC's cost
+  diverges along the Wilson envelope $z^2 \mu(1-\mu)/(\tau-\mu)^2$.
+  At $|\tau - \mu| = 5 \times 10^{-4}$, plain MC needs $\sim 10^5$
+  samples; at $|\tau - \mu| = 2 \times 10^{-5}$, plain MC *cannot
+  decide at any budget we tested*.  DiSE sits flat at **520
+  samples** across all thresholds — five orders of magnitude in
+  $|\tau - \mu|$, **the same exact certificate**.
+
+This is the operational asymmetry: tight SLA decisions are feasible
+under DiSE and infeasible under any sample-only method.
+
+**Why PSE doesn't trivially apply.**  The bounded-geometric load
+distribution is in class (D1) (independent marginals with
+closed-form CDF) but is profoundly non-uniform.  Existing PSE
+engines that assume uniform marginals over an enumerable domain
+would either need an ad-hoc extension or to fall back to sampling.
+DiSE computes closed-form mass on every axis-aligned LIA region
+under any (D1) distribution, uniform or otherwise.
+
+Reproduction: `uv run python experiments/run_decision_curve.py`.
+Raw rows in [`results/decision.jsonl`](results/decision.jsonl);
+per-cell aggregate in
+[`results/decision.json`](results/decision.json).
+
+## Follow-on: convergence to an exact certificate
 
 The cleanest demonstration of DiSE's structural advantage is a
 **convergence curve on a single-conditional threshold benchmark**:

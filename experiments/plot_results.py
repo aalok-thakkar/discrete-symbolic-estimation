@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import statistics
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -313,6 +314,87 @@ def plot_error(summary: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
+def plot_decision_curve() -> None:
+    """Samples-to-decision vs threshold-distance.
+
+    The operational headline: for any contractual threshold $\\tau$
+    in the neighbourhood of the truth $\\mu$, how many samples does
+    each method need until the certified interval lies entirely on
+    one side of $\\tau$?
+
+    Wilson's MC interval gives $n \\sim \\mu(1-\\mu) / (\\tau-\\mu)^2$
+    — diverges as $\\tau \\to \\mu$.  \\toolname{} on an axis-aligned
+    benchmark gives an exact certificate; samples-to-decision is
+    constant in $|\\tau - \\mu|$, equal to the bootstrap-plus-
+    refinement cost.
+    """
+    summary_path = RESULTS_DIR / "decision.json"
+    if not summary_path.exists():
+        print("  decision.json not found; skipping decision-curve plot")
+        return
+    summary = json.loads(summary_path.read_text())
+    rows = summary["rows"]
+    meta = summary["metadata"]
+    mu = meta["mu_truth"]
+    max_budget = meta["max_budget"]
+    delta = meta["delta"]
+
+    methods = sorted({r["method"] for r in rows},
+                     key=lambda m: METHOD_ORDER.index(m) if m in METHOD_ORDER else 99)
+
+    fig, ax = plt.subplots(figsize=(7.2, 4.8))
+    for method in methods:
+        mrs = sorted([r for r in rows if r["method"] == method],
+                     key=lambda r: abs(r["tau_minus_mu"]))
+        if not mrs:
+            continue
+        # Symmetrise: |tau - mu| on x-axis, median samples on y; combine
+        # both sides of mu by absolute distance.
+        from collections import defaultdict
+        bydist: dict[float, list[int]] = defaultdict(list)
+        capped: dict[float, bool] = defaultdict(bool)
+        for r in mrs:
+            d = abs(r["tau_minus_mu"])
+            bydist[d].append(r["median_samples"])
+            if not r.get("all_decided", True):
+                capped[d] = True
+        xs = sorted(bydist.keys())
+        ys = [statistics.median(bydist[d]) for d in xs]
+        ax.plot(xs, ys,
+                color=METHOD_COLOURS.get(method, "black"),
+                marker=METHOD_MARKERS.get(method, "o"),
+                label=method, linewidth=1.8, markersize=6)
+        for x, y, _ in zip(xs, ys, xs):
+            if capped[x]:
+                ax.scatter([x], [y], s=140, facecolor="none",
+                           edgecolor="black", linewidth=1.2, zorder=10)
+
+    # Theoretical envelope: Wilson MC needs n ~ z^2 * mu(1-mu) / (tau-mu)^2.
+    import numpy as _np
+    z = 1.96
+    dist_grid = _np.geomspace(min(abs(r["tau_minus_mu"]) for r in rows),
+                              max(abs(r["tau_minus_mu"]) for r in rows), 50)
+    env = z * z * mu * (1 - mu) / dist_grid ** 2
+    ax.plot(dist_grid, env, ":", color="#444", lw=1.2,
+            label=r"Wilson envelope $z^2\mu(1{-}\mu)/(\tau{-}\mu)^2$")
+    ax.axhline(max_budget, color="black", linestyle="--", lw=0.8, alpha=0.5,
+               label=f"max budget = {max_budget:,}")
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.invert_xaxis()
+    ax.set_xlabel(r"$|\tau - \mu|$  (decision precision; smaller is harder)")
+    ax.set_ylabel(r"samples to a $(1-\delta)$-certified decision")
+    ax.set_title(
+        r"Samples-to-decision on the SLA benchmark "
+        rf"($\mu = {mu:.4f}$, $\delta = {delta}$)"
+    )
+    ax.grid(True, alpha=0.3, which="both")
+    ax.legend(fontsize=8, loc="upper left", frameon=True)
+    fig.tight_layout()
+    _save(fig, "07_decision_curve")
+
+
 def plot_convergence_curve() -> None:
     """Half-width vs sample budget on a single fixed-mu benchmark.
 
@@ -454,6 +536,7 @@ def main() -> int:
     FIG_DIR = Path(args.out_dir)
 
     if args.rare_event_only:
+        plot_decision_curve()
         plot_rare_event_scaling()
         plot_convergence_curve()
         return 0
@@ -461,6 +544,7 @@ def main() -> int:
     summary = _load_summary()
     print(f"# {len(summary['summary_rows'])} summary rows; generating figures")
 
+    plot_decision_curve()
     plot_rare_event_scaling()
     plot_convergence_curve()
     plot_halfwidth_vs_budget(summary)

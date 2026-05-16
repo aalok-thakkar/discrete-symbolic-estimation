@@ -1,0 +1,714 @@
+{
+  "metadata": {
+    "benchmark": "sla_load_classifier",
+    "N": 10000,
+    "P_BG": 0.001,
+    "load_threshold": 5000,
+    "mu_truth": 0.006682968345729456,
+    "delta": 0.05,
+    "methods": [
+      "plain_mc",
+      "plain_mc_betting",
+      "dise_betting"
+    ],
+    "taus": [
+      0.0016829683457294563,
+      0.004682968345729456,
+      0.005682968345729456,
+      0.006182968345729456,
+      0.006482968345729457,
+      0.006582968345729456,
+      0.006632968345729457,
+      0.006662968345729456,
+      0.0067029683457294565,
+      0.006732968345729456,
+      0.006782968345729457,
+      0.006882968345729456,
+      0.007182968345729457,
+      0.0076829683457294564,
+      0.008682968345729456,
+      0.011682968345729457
+    ],
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "max_budget": 200000,
+    "total_wall_s": 2089.972916791914
+  },
+  "rows": [
+    {
+      "tau": 0.0016829683457294563,
+      "tau_minus_mu": -0.005,
+      "method": "dise_betting",
+      "n_seeds": 3,
+      "median_samples": 520,
+      "median_half_width": 0.0,
+      "all_decided": true,
+      "decisions": [
+        "above",
+        "above",
+        "above"
+      ]
+    },
+    {
+      "tau": 0.0016829683457294563,
+      "tau_minus_mu": -0.005,
+      "method": "plain_mc",
+      "n_seeds": 3,
+      "median_samples": 1200,
+      "median_half_width": 0.005120823773848443,
+      "all_decided": true,
+      "decisions": [
+        "above",
+        "above",
+        "above"
+      ]
+    },
+    {
+      "tau": 0.0016829683457294563,
+      "tau_minus_mu": -0.005,
+      "method": "plain_mc_betting",
+      "n_seeds": 3,
+      "median_samples": 3400,
+      "median_half_width": 0.004750062198469141,
+      "all_decided": true,
+      "decisions": [
+        "above",
+        "above",
+        "above"
+      ]
+    },
+    {
+      "tau": 0.004682968345729456,
+      "tau_minus_mu": -0.002,
+      "method": "dise_betting",
+      "n_seeds": 3,
+      "median_samples": 520,
+      "median_half_width": 0.0,
+      "all_decided": true,
+      "decisions": [
+        "above",
+        "above",
+        "above"
+      ]
+    },
+    {
+      "tau": 0.004682968345729456,
+      "tau_minus_mu": -0.002,
+      "method": "plain_mc",
+      "n_seeds": 3,
+      "median_samples": 10000,
+      "median_half_width": 0.001562014538553911,
+      "all_decided": true,
+      "decisions": [
+        "above",
+        "above",
+        "above"
+      ]
+    },
+    {
+      "tau": 0.004682968345729456,
+      "tau_minus_mu": -0.002,
+      "method": "plain_mc_betting",
+      "n_seeds": 3,
+      "median_samples": 23600,
+      "median_half_width": 0.0019855995889736713,
+      "all_decided": true,
+      "decisions": [
+        "above",
+        "above",
+        "above"
+      ]
+    },
+    {
+      "tau": 0.005682968345729456,
+      "tau_minus_mu": -0.001,
+      "method": "dise_betting",
+      "n_seeds": 3,
+      "median_samples": 520,
+      "median_half_width": 0.0,
+      "all_decided": true,
+      "decisions": [
+        "above",
+        "above",
+        "above"
+      ]
+    },
+    {
+      "tau": 0.005682968345729456,
+      "tau_minus_mu": -0.001,
+      "method": "plain_mc",
+      "n_seeds": 3,
+      "median_samples": 23600,
+      "median_half_width": 0.0010531546696049712,
+      "all_decided": true,
+      "decisions": [
+        "above",
+        "above",
+        "above"
+      ]
+    },
+    {
+      "tau": 0.005682968345729456,
+      "tau_minus_mu": -0.001,
+      "method": "plain_mc_betting",
+      "n_seeds": 3,
+      "median_samples": 54000,
+      "median_half_width": 0.0014032571646952381,
+      "all_decided": true,
+      "decisions": [
+        "above",
+        "above",
+        "above"
+      ]
+    },
+    {
+      "tau": 0.006182968345729456,
+      "tau_minus_mu": -0.0005000000000000004,
+      "method": "dise_betting",
+      "n_seeds": 3,
+      "median_samples": 520,
+      "median_half_width": 0.0,
+      "all_decided": true,
+      "decisions": [
+        "above",
+        "above",
+        "above"
+      ]
+    },
+    {
+      "tau": 0.006182968345729456,
+      "tau_minus_mu": -0.0005000000000000004,
+      "method": "plain_mc",
+      "n_seeds": 3,
+      "median_samples": 51800,
+      "median_half_width": 0.0007153314704360158,
+      "all_decided": true,
+      "decisions": [
+        "above",
+        "above",
+        "above"
+      ]
+    },
+    {
+      "tau": 0.006182968345729456,
+      "tau_minus_mu": -0.0005000000000000004,
+      "method": "plain_mc_betting",
+      "n_seeds": 3,
+      "median_samples": 200000,
+      "median_half_width": 0.0008097980988786824,
+      "all_decided": false,
+      "decisions": [
+        "undecided",
+        "undecided",
+        "undecided"
+      ]
+    },
+    {
+      "tau": 0.006482968345729457,
+      "tau_minus_mu": -0.00019999999999999966,
+      "method": "dise_betting",
+      "n_seeds": 3,
+      "median_samples": 520,
+      "median_half_width": 0.0,
+      "all_decided": true,
+      "decisions": [
+        "above",
+        "above",
+        "above"
+      ]
+    },
+    {
+      "tau": 0.006482968345729457,
+      "tau_minus_mu": -0.00019999999999999966,
+      "method": "plain_mc",
+      "n_seeds": 3,
+      "median_samples": 58600,
+      "median_half_width": 0.0006837293716553669,
+      "all_decided": false,
+      "decisions": [
+        "above",
+        "above",
+        "undecided"
+      ]
+    },
+    {
+      "tau": 0.006482968345729457,
+      "tau_minus_mu": -0.00019999999999999966,
+      "method": "plain_mc_betting",
+      "n_seeds": 3,
+      "median_samples": 200000,
+      "median_half_width": 0.0008097980988786824,
+      "all_decided": false,
+      "decisions": [
+        "undecided",
+        "undecided",
+        "undecided"
+      ]
+    },
+    {
+      "tau": 0.006582968345729456,
+      "tau_minus_mu": -0.00010000000000000026,
+      "method": "dise_betting",
+      "n_seeds": 3,
+      "median_samples": 520,
+      "median_half_width": 0.0,
+      "all_decided": true,
+      "decisions": [
+        "above",
+        "above",
+        "above"
+      ]
+    },
+    {
+      "tau": 0.006582968345729456,
+      "tau_minus_mu": -0.00010000000000000026,
+      "method": "plain_mc",
+      "n_seeds": 3,
+      "median_samples": 72000,
+      "median_half_width": 0.0006190471116545513,
+      "all_decided": false,
+      "decisions": [
+        "above",
+        "above",
+        "undecided"
+      ]
+    },
+    {
+      "tau": 0.006582968345729456,
+      "tau_minus_mu": -0.00010000000000000026,
+      "method": "plain_mc_betting",
+      "n_seeds": 3,
+      "median_samples": 200000,
+      "median_half_width": 0.0008097980988786824,
+      "all_decided": false,
+      "decisions": [
+        "undecided",
+        "undecided",
+        "undecided"
+      ]
+    },
+    {
+      "tau": 0.006632968345729457,
+      "tau_minus_mu": -4.99999999999997e-05,
+      "method": "dise_betting",
+      "n_seeds": 3,
+      "median_samples": 520,
+      "median_half_width": 0.0,
+      "all_decided": true,
+      "decisions": [
+        "above",
+        "above",
+        "above"
+      ]
+    },
+    {
+      "tau": 0.006632968345729457,
+      "tau_minus_mu": -4.99999999999997e-05,
+      "method": "plain_mc",
+      "n_seeds": 3,
+      "median_samples": 200000,
+      "median_half_width": 0.0003617328216629175,
+      "all_decided": false,
+      "decisions": [
+        "above",
+        "undecided",
+        "undecided"
+      ]
+    },
+    {
+      "tau": 0.006632968345729457,
+      "tau_minus_mu": -4.99999999999997e-05,
+      "method": "plain_mc_betting",
+      "n_seeds": 3,
+      "median_samples": 200000,
+      "median_half_width": 0.0008097980988786824,
+      "all_decided": false,
+      "decisions": [
+        "undecided",
+        "undecided",
+        "undecided"
+      ]
+    },
+    {
+      "tau": 0.006662968345729456,
+      "tau_minus_mu": -2.0000000000000052e-05,
+      "method": "dise_betting",
+      "n_seeds": 3,
+      "median_samples": 520,
+      "median_half_width": 0.0,
+      "all_decided": true,
+      "decisions": [
+        "above",
+        "above",
+        "above"
+      ]
+    },
+    {
+      "tau": 0.006662968345729456,
+      "tau_minus_mu": -2.0000000000000052e-05,
+      "method": "plain_mc",
+      "n_seeds": 3,
+      "median_samples": 200000,
+      "median_half_width": 0.0003617328216629175,
+      "all_decided": false,
+      "decisions": [
+        "above",
+        "undecided",
+        "undecided"
+      ]
+    },
+    {
+      "tau": 0.006662968345729456,
+      "tau_minus_mu": -2.0000000000000052e-05,
+      "method": "plain_mc_betting",
+      "n_seeds": 3,
+      "median_samples": 200000,
+      "median_half_width": 0.0008097980988786824,
+      "all_decided": false,
+      "decisions": [
+        "undecided",
+        "undecided",
+        "undecided"
+      ]
+    },
+    {
+      "tau": 0.0067029683457294565,
+      "tau_minus_mu": 2.0000000000000052e-05,
+      "method": "dise_betting",
+      "n_seeds": 3,
+      "median_samples": 520,
+      "median_half_width": 0.0,
+      "all_decided": true,
+      "decisions": [
+        "below",
+        "below",
+        "below"
+      ]
+    },
+    {
+      "tau": 0.0067029683457294565,
+      "tau_minus_mu": 2.0000000000000052e-05,
+      "method": "plain_mc",
+      "n_seeds": 3,
+      "median_samples": 200000,
+      "median_half_width": 0.0003617328216629175,
+      "all_decided": false,
+      "decisions": [
+        "above",
+        "undecided",
+        "undecided"
+      ]
+    },
+    {
+      "tau": 0.0067029683457294565,
+      "tau_minus_mu": 2.0000000000000052e-05,
+      "method": "plain_mc_betting",
+      "n_seeds": 3,
+      "median_samples": 200000,
+      "median_half_width": 0.0008097980988786824,
+      "all_decided": false,
+      "decisions": [
+        "undecided",
+        "undecided",
+        "undecided"
+      ]
+    },
+    {
+      "tau": 0.006732968345729456,
+      "tau_minus_mu": 4.99999999999997e-05,
+      "method": "dise_betting",
+      "n_seeds": 3,
+      "median_samples": 520,
+      "median_half_width": 0.0,
+      "all_decided": true,
+      "decisions": [
+        "below",
+        "below",
+        "below"
+      ]
+    },
+    {
+      "tau": 0.006732968345729456,
+      "tau_minus_mu": 4.99999999999997e-05,
+      "method": "plain_mc",
+      "n_seeds": 3,
+      "median_samples": 14600,
+      "median_half_width": 0.0014700248144133554,
+      "all_decided": false,
+      "decisions": [
+        "above",
+        "below",
+        "undecided"
+      ]
+    },
+    {
+      "tau": 0.006732968345729456,
+      "tau_minus_mu": 4.99999999999997e-05,
+      "method": "plain_mc_betting",
+      "n_seeds": 3,
+      "median_samples": 200000,
+      "median_half_width": 0.0008097980988786824,
+      "all_decided": false,
+      "decisions": [
+        "undecided",
+        "undecided",
+        "undecided"
+      ]
+    },
+    {
+      "tau": 0.006782968345729457,
+      "tau_minus_mu": 0.00010000000000000026,
+      "method": "dise_betting",
+      "n_seeds": 3,
+      "median_samples": 520,
+      "median_half_width": 0.0,
+      "all_decided": true,
+      "decisions": [
+        "below",
+        "below",
+        "below"
+      ]
+    },
+    {
+      "tau": 0.006782968345729457,
+      "tau_minus_mu": 0.00010000000000000026,
+      "method": "plain_mc",
+      "n_seeds": 3,
+      "median_samples": 15200,
+      "median_half_width": 0.001446555266002255,
+      "all_decided": false,
+      "decisions": [
+        "above",
+        "below",
+        "undecided"
+      ]
+    },
+    {
+      "tau": 0.006782968345729457,
+      "tau_minus_mu": 0.00010000000000000026,
+      "method": "plain_mc_betting",
+      "n_seeds": 3,
+      "median_samples": 200000,
+      "median_half_width": 0.0008097980988786824,
+      "all_decided": false,
+      "decisions": [
+        "undecided",
+        "undecided",
+        "undecided"
+      ]
+    },
+    {
+      "tau": 0.006882968345729456,
+      "tau_minus_mu": 0.00019999999999999966,
+      "method": "dise_betting",
+      "n_seeds": 3,
+      "median_samples": 520,
+      "median_half_width": 0.0,
+      "all_decided": true,
+      "decisions": [
+        "below",
+        "below",
+        "below"
+      ]
+    },
+    {
+      "tau": 0.006882968345729456,
+      "tau_minus_mu": 0.00019999999999999966,
+      "method": "plain_mc",
+      "n_seeds": 3,
+      "median_samples": 15400,
+      "median_half_width": 0.0014609132397273242,
+      "all_decided": true,
+      "decisions": [
+        "above",
+        "below",
+        "below"
+      ]
+    },
+    {
+      "tau": 0.006882968345729456,
+      "tau_minus_mu": 0.00019999999999999966,
+      "method": "plain_mc_betting",
+      "n_seeds": 3,
+      "median_samples": 200000,
+      "median_half_width": 0.0008097980988786824,
+      "all_decided": false,
+      "decisions": [
+        "undecided",
+        "undecided",
+        "undecided"
+      ]
+    },
+    {
+      "tau": 0.007182968345729457,
+      "tau_minus_mu": 0.0005000000000000004,
+      "method": "dise_betting",
+      "n_seeds": 3,
+      "median_samples": 520,
+      "median_half_width": 0.0,
+      "all_decided": true,
+      "decisions": [
+        "below",
+        "below",
+        "below"
+      ]
+    },
+    {
+      "tau": 0.007182968345729457,
+      "tau_minus_mu": 0.0005000000000000004,
+      "method": "plain_mc",
+      "n_seeds": 3,
+      "median_samples": 30400,
+      "median_half_width": 0.0008880485078752476,
+      "all_decided": true,
+      "decisions": [
+        "below",
+        "below",
+        "below"
+      ]
+    },
+    {
+      "tau": 0.007182968345729457,
+      "tau_minus_mu": 0.0005000000000000004,
+      "method": "plain_mc_betting",
+      "n_seeds": 3,
+      "median_samples": 200000,
+      "median_half_width": 0.0008097980988786824,
+      "all_decided": false,
+      "decisions": [
+        "undecided",
+        "undecided",
+        "undecided"
+      ]
+    },
+    {
+      "tau": 0.0076829683457294564,
+      "tau_minus_mu": 0.001,
+      "method": "dise_betting",
+      "n_seeds": 3,
+      "median_samples": 520,
+      "median_half_width": 0.0,
+      "all_decided": true,
+      "decisions": [
+        "below",
+        "below",
+        "below"
+      ]
+    },
+    {
+      "tau": 0.0076829683457294564,
+      "tau_minus_mu": 0.001,
+      "method": "plain_mc",
+      "n_seeds": 3,
+      "median_samples": 6400,
+      "median_half_width": 0.0018803800077381635,
+      "all_decided": true,
+      "decisions": [
+        "below",
+        "below",
+        "below"
+      ]
+    },
+    {
+      "tau": 0.0076829683457294564,
+      "tau_minus_mu": 0.001,
+      "method": "plain_mc_betting",
+      "n_seeds": 3,
+      "median_samples": 180400,
+      "median_half_width": 0.0008693232132228135,
+      "all_decided": true,
+      "decisions": [
+        "below",
+        "below",
+        "below"
+      ]
+    },
+    {
+      "tau": 0.008682968345729456,
+      "tau_minus_mu": 0.002,
+      "method": "dise_betting",
+      "n_seeds": 3,
+      "median_samples": 520,
+      "median_half_width": 0.0,
+      "all_decided": true,
+      "decisions": [
+        "below",
+        "below",
+        "below"
+      ]
+    },
+    {
+      "tau": 0.008682968345729456,
+      "tau_minus_mu": 0.002,
+      "method": "plain_mc",
+      "n_seeds": 3,
+      "median_samples": 2400,
+      "median_half_width": 0.0030387332698349175,
+      "all_decided": true,
+      "decisions": [
+        "below",
+        "below",
+        "below"
+      ]
+    },
+    {
+      "tau": 0.008682968345729456,
+      "tau_minus_mu": 0.002,
+      "method": "plain_mc_betting",
+      "n_seeds": 3,
+      "median_samples": 17600,
+      "median_half_width": 0.0022147464156020372,
+      "all_decided": true,
+      "decisions": [
+        "below",
+        "below",
+        "below"
+      ]
+    },
+    {
+      "tau": 0.011682968345729457,
+      "tau_minus_mu": 0.005000000000000001,
+      "method": "dise_betting",
+      "n_seeds": 3,
+      "median_samples": 520,
+      "median_half_width": 0.0,
+      "all_decided": true,
+      "decisions": [
+        "below",
+        "below",
+        "below"
+      ]
+    },
+    {
+      "tau": 0.011682968345729457,
+      "tau_minus_mu": 0.005000000000000001,
+      "method": "plain_mc",
+      "n_seeds": 3,
+      "median_samples": 600,
+      "median_half_width": 0.005578381489235758,
+      "all_decided": true,
+      "decisions": [
+        "below",
+        "below",
+        "below"
+      ]
+    },
+    {
+      "tau": 0.011682968345729457,
+      "tau_minus_mu": 0.005000000000000001,
+      "method": "plain_mc_betting",
+      "n_seeds": 3,
+      "median_samples": 2600,
+      "median_half_width": 0.005388697883759156,
+      "all_decided": true,
+      "decisions": [
+        "below",
+        "below",
+        "below"
+      ]
+    }
+  ]
+}
